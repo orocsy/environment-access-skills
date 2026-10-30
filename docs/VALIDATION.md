@@ -25,3 +25,7 @@
 POSIX 权限检查不能代替 Windows ACL；Windows 的 Node CLI 和单元边界由远端 CI 单独验证。age 在没有安装的 CI 环境会明确跳过，不伪装成测试通过。没有独立新会话 agent 的行为实测，没有实际支付、邮件发送、客户账号变更或部署。
 
 远端 CI 与实际提交由交付时核对；这里只记录已执行的检查，不预写“全部平台上线”。
+
+## 远端结果
+
+代码提交 `de07cafeab9d9aaf443b2de5a73e79b01c674cb6` 的 [GitHub Actions](https://github.com/orocsy/environment-access-skills/actions/runs/41000452911) 已通过。矩阵覆盖 Linux 和 Windows 的 Node 测试、缺陷注入；Linux 另跑真实终端与 Chromium。CI 未安装 age 时对应分组明确跳过，age 的实际往返与错身份拒绝已在本机安装的标准工具上验证。
