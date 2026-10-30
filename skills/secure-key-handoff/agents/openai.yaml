@@ -1,0 +1,4 @@
+interface:
+  display_name: "安全密钥交接"
+  short_description: "为 API Key 生成按平台配置的交接步骤、离线加密页与备用方案"
+  default_prompt: "使用 $secure-key-handoff 帮我向客户索取 Resend API Key，生成简短操作步骤和安全交接包。"

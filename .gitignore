@@ -1,0 +1,11 @@
+node_modules/
+output/
+*.pem
+*.age
+*.secret
+*.env
+.env*
+*-encrypted.json
+request.json
+coverage/
+owner.html

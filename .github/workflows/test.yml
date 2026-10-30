@@ -1,0 +1,27 @@
+name: Verify secure handoff
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci
+      - run: npm test
+      - run: npm run test:guards
+      - name: Real hidden terminal
+        if: runner.os == 'Linux'
+        run: python3 tests/tty.test.py
+      - name: Browser dependency
+        if: runner.os == 'Linux'
+        run: npx playwright install --with-deps chromium
+      - name: Offline browser handoff
+        if: runner.os == 'Linux'
+        run: npm run test:browser

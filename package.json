@@ -1,0 +1,17 @@
+{
+	"name": "environment-access-skills",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"test": "node --test tests/*.test.mjs",
+		"test:browser": "node tests/browser.mjs",
+		"test:guards": "node tests/guards.mjs"
+	},
+	"engines": {
+		"node": ">=22.13.0"
+	},
+	"devDependencies": {
+		"@playwright/test": "1.61.1"
+	}
+}
