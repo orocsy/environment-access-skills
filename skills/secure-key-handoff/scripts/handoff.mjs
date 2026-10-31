@@ -366,9 +366,12 @@ function envLine(name, value) {
 	);
 }
 // One install at a time per env file, so concurrent receivers can't drop each other's lines.
+export async function envLockPath(file) {
+	const id = `${await realpath(dirname(resolve(file)))}/${basename(file)}`;
+	return join(tmpdir(), `secure-key-handoff-${createHash("sha256").update(id).digest("hex").slice(0, 16)}.lock`);
+}
 async function withEnvLock(file, work) {
-	const id = `${await realpath(dirname(file))}/${basename(file)}`;
-	const lock = join(tmpdir(), `secure-key-handoff-${createHash("sha256").update(id).digest("hex").slice(0, 16)}.lock`);
+	const lock = await envLockPath(file);
 	for (let waited = 0; ; waited += 25) {
 		try {
 			await writeFile(lock, String(process.pid), { flag: "wx", mode: 0o600 });

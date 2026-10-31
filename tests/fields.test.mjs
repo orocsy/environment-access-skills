@@ -17,6 +17,7 @@ import {
 	open,
 	ownerPage,
 	checkValue,
+	envLockPath,
 } from "../skills/secure-key-handoff/scripts/handoff.mjs";
 const script = resolve("skills/secure-key-handoff/scripts/handoff.mjs");
 const run = (args, input) =>
@@ -356,6 +357,33 @@ test("different requests installing into one env file at once all land", async (
 		for (const r of results) assert.equal(r.status, 0, r.stderr);
 		const lines = (await readFile(env, "utf8")).trim().split("\n").sort();
 		assert.deepEqual(lines, Array.from({ length: 6 }, (_, i) => `KEY_${i}=re_DEMO_${i}`));
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("an install waits while another holds the env file's lock", async () => {
+	const root = await mkdtemp(join(tmpdir(), "handoff-lock-"));
+	try {
+		await mkdir(join(root, "outside"));
+		const env = join(root, "outside", ".env");
+		await writeFile(env, "OTHER=1\n");
+		const info = await prepared(root, []);
+		const enc = join(root, "enc.json");
+		run(["seal", "--request", info.delivery, "--out", enc, "--stdin", "true"], "re_DEMO_VALUE\n");
+		const lock = await envLockPath(env);
+		await writeFile(lock, "held by test", { flag: "wx" });
+		let finished = false;
+		const pending = runAsync([
+			"receive", "--request", info.pinned, "--key", info.privateKey, "--input", enc, "--dotenv", env, "--env-name", "KEY",
+		]).then((r) => ((finished = true), r));
+		await new Promise((done) => setTimeout(done, 2000));
+		assert.equal(finished, false, "receiver waits for the lock");
+		assert.equal(await readFile(env, "utf8"), "OTHER=1\n", "nothing written while locked");
+		await rm(lock);
+		const r = await pending;
+		assert.equal(r.status, 0, r.stderr);
+		assert.equal(await readFile(env, "utf8"), "OTHER=1\nKEY=re_DEMO_VALUE\n");
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}
