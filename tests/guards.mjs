@@ -20,22 +20,31 @@ try {
 		recursive: true,
 	});
 	await mkdir(join(scratch, "tests"));
-	await copyFile(
-		resolve("tests/handoff.test.mjs"),
-		join(scratch, "tests/handoff.test.mjs"),
-	);
+	for (const file of ["handoff.test.mjs", "fields.test.mjs"])
+		await copyFile(resolve("tests", file), join(scratch, "tests", file));
 	const target = join(scratch, "skills/secure-key-handoff/scripts/handoff.mjs");
 	await writeFile(target, original);
 	const run = () =>
-		spawnSync(process.execPath, ["--test", "tests/handoff.test.mjs"], {
+		spawnSync(
+			process.execPath,
+			["--test", "tests/handoff.test.mjs", "tests/fields.test.mjs"],
+			{
 			cwd: scratch,
 			encoding: "utf8",
-			timeout: 30000,
-		});
+				timeout: 60000,
+			},
+		);
 	assert.equal(run().status, 0, "Baseline must pass");
 	for (const [name, before, after] of [
 		["envelope version", "envelope.version !== 1 ||", ""],
 		["request expiration", "Date.parse(r.expiresAt) <= Date.now()", "false"],
+		["live key on a test request", 'request.environment !== "live" &&', "false &&"],
+		[
+			"single use",
+			'throw new SafeError("This request was already used; prepare a new one");',
+			"",
+		],
+		["git-ignored env file", 'if (git("check-ignore", "-q").status !== 0)', "if (false)"],
 	]) {
 		assert.equal(original.split(before).length, 2);
 		await writeFile(target, original.replace(before, after));

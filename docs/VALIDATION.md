@@ -29,3 +29,15 @@ POSIX 权限检查不能代替 Windows ACL；Windows 的 Node CLI 和单元边�
 ## 远端结果
 
 代码提交 `de07cafeab9d9aaf443b2de5a73e79b01c674cb6` 的 [GitHub Actions](https://github.com/orocsy/environment-access-skills/actions/runs/41000452911) 已通过。矩阵覆盖 Linux 和 Windows 的 Node 测试、缺陷注入；Linux 另跑真实终端与 Chromium。CI 未安装 age 时对应分组明确跳过，age 的实际往返与错身份拒绝已在本机安装的标准工具上验证。
+
+## 0.2（2026-10-31）
+
+新增功能见 README。先写 `tests/fields.test.mjs` 并确认失败，再实现。
+
+- Node 22.23：9 个测试分组通过（age 未安装时跳过 1 组）。新增覆盖：值检查（空、开头、测试请求拒收 live 密钥）、英文多字段页面、多字段写入被忽略的 env 文件且只打印变量名、二次接收被拒、被跟踪/未忽略/已存在变量被拒且原因清楚、`--replace`、解密端拒收字段不符和 live 值。
+- 缺陷注入 5 项全部被行为断言抓到：原有 2 项，加上 live 检查、单次接收、env 文件必须被忽略。
+- 浏览器 7 个用例通过，用本机 Google Chrome（`BROWSER_CHANNEL=chrome npm run test:browser`）：原 6 个，加英文多字段页面的核对码、遮挡与显示、live 值当场拒绝且不下载、下载后清空并恢复遮挡、零 HTTP、从文件夹接收。
+- 真实伪终端测试通过。
+- 实测发现：Node 22 会把脚本参数中的 `--env-file` 当作自身选项并加载该文件，所以选项命名为 `--dotenv`。
+
+没有在 Windows 或 Firefox 上实测；Firefox 可能不支持 `-webkit-text-security`，那时输入框不遮挡，功能不受影响。

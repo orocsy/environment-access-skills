@@ -33,7 +33,13 @@ description: 为向客户或同事索取 API Key、Webhook secret 等凭据生�
 node scripts/handoff.mjs prepare --platform resend --environment test --label 'Resend API Key 交接' --private-dir /PRIVATE/keys --out /DELIVERY/resend-handoff
 ```
 
-替换路径为该任务自己的位置。私钥目录必须在所有 Git checkout 之外；输出目录必须新建。`prepare` 返回 requestId 和路径，不返回私钥内容。`test` 只是交接标签，不会自动在供应商创建沙箱。请求默认 24 小时，可用 `--hours 48`，上限 168 小时。
+常用选项（都只放非秘密元数据）：
+
+- `--lang en`：英文页面和提示；默认中文。对方用英文沟通时用它。
+- `--fields STRIPE_SECRET_KEY:rk_test_|sk_test_,STRIPE_WEBHOOK_SECRET:whsec_`：一次交接多个具名值，每个一格。冒号后是允许的开头，可省略。页面先检查再加密，接收端再检查一次。
+- 非 live 请求一律拒绝 `sk_live_`/`rk_live_`/`pk_live_` 开头的值，页面当场提示，不生成文件。
+
+替换路径为该任务自己的位置。私钥目录必须在所有 Git checkout 之外；输出目录必须新建。`prepare` 输出的 `shortCode`（如 `9F1C-87C4-21DA-C3C7`）也显示在页面上：把它通过另一渠道（如聊天）告诉对方，让对方核对后再粘贴。`prepare` 返回 requestId 和路径，不返回私钥内容。`test` 只是交接标签，不会自动在供应商创建沙箱。请求默认 24 小时，可用 `--hours 48`，上限 168 小时。
 
 向对方交 `owner.html` 及按平台编写的短步骤；CLI 备用另交 `request.json` 和 `handoff.mjs`。路径均相对本 skill。不要把技术说明发成老板待办。
 
@@ -45,7 +51,26 @@ node handoff.mjs seal --request request.json --out response-encrypted.json
 node scripts/handoff.mjs receive --request /PRIVATE/keys/REQUEST_ID.request.json --key /PRIVATE/keys/REQUEST_ID.pem --input /RECEIVED/response-encrypted.json --out /PRIVATE/config/provider.secret
 ```
 
+接收也可直接写入 env 文件，不经过任何明文文件：
+
+```sh
+# --input 可以是下载文件夹：自动选这次请求最新的密文文件。
+node scripts/handoff.mjs receive --request /PRIVATE/keys/REQUEST_ID.request.json --key /PRIVATE/keys/REQUEST_ID.pem --input ~/Downloads --dotenv /PROJECT/apps/api/.env.local
+# 单值请求另加 --env-name RESEND_API_KEY；已存在的变量须加 --replace true 才会覆盖。
+```
+
+`--dotenv` 的文件若在 Git checkout 内，必须已被 Git 忽略且未被跟踪，否则拒绝并说明原因；写入是原子替换，权限 0600，只打印变量名。不要用 `--env-file` 这个名字：Node 会在脚本参数里也解析它并加载该文件。每个请求只能成功接收一次（私钥旁写 `.used` 标记）；要再交接就重新 `prepare`。出错信息只含原因，不含值。
+
 只交密文文件。接收时核对请求、平台、环境、公钥配对、完整性和有效期；输出权限 0600、不覆盖现有文件、不写 Git 目录。Windows 须另检查目录 ACL，POSIX mode 不等于 Windows 权限保证。接收后不要 `cat`、读文件工具、截图或打印秘密；由程序直接导入目标密钥配置。拿到 Key 不自动授权发信、付款、推送、部署或真实客户操作。
+
+## 接收方是 Claude 等 agent 时
+
+用户要给 agent 一个密钥时默认走这条，不让用户在聊天里粘贴：
+
+1. 先确定变量名、环境、要写入哪个被忽略的 env 文件；私钥目录用 `~/.config/secure-key-handoff/<项目>/`。
+2. `prepare --lang <用户语言> --fields ...`，把 `owner.html` 作为文件发给用户，在聊天里说出 `shortCode`，并用一句话说明要去平台哪里复制哪个值。
+3. 用户说“好了”后，`receive --input ~/Downloads --dotenv <文件>`。只报告写入了哪些变量名，不读取、不打印值。
+4. 用完提醒用户删掉下载的密文文件；平台上的撤销仍由用户决定。
 
 ## 必须保留的边界
 
