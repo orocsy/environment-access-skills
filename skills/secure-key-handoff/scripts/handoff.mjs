@@ -454,13 +454,29 @@ async function editEnv(file, values, replace) {
 	const expected = { ...before, ...values };
 	if (Object.keys(after).length !== Object.keys(expected).length || Object.entries(expected).some(([k, v]) => after[k] !== v))
 		throw new SafeError("The env file has syntax this tool can't edit safely; add the keys by hand or use --out");
-	const temp = `${file}.${randomUUID()}.tmp`;
+	// Stage in a private sibling folder under the env file's own name, so the pattern that ignores the
+	// env file (unanchored, e.g. .env.local or .env*) also ignores the plaintext staging copy.
+	const stage = join(dirname(file), `.handoff-${randomUUID()}`);
+	const temp = join(stage, basename(file));
+	if (!(await ignoredOutsideGit(temp)))
+		throw new SafeError(
+			`Git would not ignore the staging copy ${relative(dirname(file), temp)}; use an unanchored .gitignore pattern such as ${basename(file)} or .env*`,
+		);
 	try {
+		await mkdir(stage, { mode: 0o700 });
 		await writeFile(temp, next, { flag: "wx", mode: 0o600 });
 		await rename(temp, file);
 	} finally {
-		await rm(temp, { force: true });
+		await rm(stage, { recursive: true, force: true });
 	}
+}
+// True when the path is outside every checkout, or ignored by its checkout. The path need not exist.
+async function ignoredOutsideGit(path) {
+	const folder = await realpath(dirname(dirname(path)));
+	const root = await gitRoot(folder);
+	if (!root) return true;
+	const rel = relative(root, join(folder, basename(dirname(path)), basename(path)));
+	return spawnSync("git", ["-C", root, "check-ignore", "-q", "--", rel]).status === 0;
 }
 // --input may be the downloads folder: pick the newest response for this request.
 async function findResponse(input, id) {
@@ -496,12 +512,18 @@ function parseFields(spec) {
 }
 // Every named key needs researched guidance: the catalog, or a --guide-file the agent wrote from the
 // platform's docs. Prefixes the caller left out come from the catalog.
-async function withGuides(fields, guideFile) {
+// The catalog describes test-mode keys; a live request needs its own researched guide and live prefixes.
+async function withGuides(fields, guideFile, environment) {
 	if (!fields) return fields;
 	const catalog = JSON.parse(await readFile(new URL("../references/key-catalog.json", import.meta.url), "utf8"));
 	const extra = guideFile ? JSON.parse(await readFile(guideFile, "utf8")) : {};
+	const live = environment === "live";
 	return fields.map((f) => {
-		const entry = catalog[f.name];
+		if (live && (!extra[f.name] || !f.prefixes.length))
+			throw new SafeError(
+				`The catalog covers test keys only. For a live ${f.name}, pass researched --guide-file guidance and explicit live prefixes`,
+			);
+		const entry = live ? undefined : catalog[f.name];
 		const guide = extra[f.name] ?? entry?.guide;
 		if (!guide)
 			throw new SafeError(
@@ -540,7 +562,7 @@ export async function main(args) {
 			throw new SafeError("hours must be 0 to 168");
 		if (o.lang && !["zh", "en"].includes(o.lang))
 			throw new SafeError("lang must be zh or en");
-		const fields = await withGuides(parseFields(o.fields), o["guide-file"]);
+		const fields = await withGuides(parseFields(o.fields), o["guide-file"], o.environment);
 		await outsideGit(resolve(o["private-dir"]));
 		const { privateKey, publicKey } = generateKeyPairSync("rsa", {
 			modulusLength: 4096,

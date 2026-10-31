@@ -51,6 +51,8 @@ try {
 		],
 		["replace every assignment", 'sets(name, l) ? [] : [l]', "[l]"],
 		["researched guidance required", "if (!guide)", "if (false)"],
+		["ignored staging copy", "if (!(await ignoredOutsideGit(temp)))", "if (false)"],
+		["catalog is test-only", "if (live && (!extra[f.name] || !f.prefixes.length))", "if (false)"],
 		["env file lock", 'writeFile(lock, String(process.pid), { flag: "wx"', 'writeFile(lock, String(process.pid), { flag: "w"'],
 		["git-ignored env file", 'if (git("check-ignore", "-q").status !== 0)', "if (false)"],
 	]) {

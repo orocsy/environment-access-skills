@@ -453,3 +453,51 @@ test("serve shows the page on 127.0.0.1 only, uncached, and nothing else", async
 		await rm(root, { recursive: true, force: true });
 	}
 });
+
+test("the plaintext staging file is ignored too, or the install refuses before writing", async () => {
+	const root = await mkdtemp(join(tmpdir(), "handoff-stage-"));
+	try {
+		for (const [ignore, ok] of [[".env.local\n", true], [".env*\n", true], ["/.env.local\n", false]]) {
+			const repo = join(root, `app${ok}${ignore.length}`);
+			await mkdir(repo);
+			git(repo, "init", "-q");
+			await writeFile(join(repo, ".gitignore"), ignore);
+			const info = await prepared(join(root, `r${ok}${ignore.length}`), []);
+			const enc = join(root, `e${ok}${ignore.length}.json`);
+			run(["seal", "--request", info.delivery, "--out", enc, "--stdin", "true"], "re_DEMO_VALUE\n");
+			const r = run(["receive", "--request", info.pinned, "--key", info.privateKey, "--input", enc, "--dotenv", join(repo, ".env.local"), "--env-name", "RESEND_API_KEY"]);
+			if (ok) assert.equal(r.status, 0, `${ignore}: ${r.stderr}`);
+			else {
+				assert.notEqual(r.status, 0, ignore);
+				assert.match(r.stderr, /staging/);
+			}
+			const left = (await readdir(repo)).filter((n) => n !== ".git" && n !== ".gitignore" && n !== ".env.local");
+			assert.deepEqual(left, [], `${ignore}: nothing left beside the env file`);
+		}
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("catalog guidance is for test keys; a live request needs its own researched guide and prefixes", async () => {
+	const root = await mkdtemp(join(tmpdir(), "handoff-live-guide-"));
+	try {
+		const priv = join(root, "private");
+		const base = ["prepare", "--platform", "stripe", "--environment", "live", "--label", "Stripe live", "--private-dir", priv];
+		const refused = run([...base, "--out", join(root, "a"), "--fields", "STRIPE_SECRET_KEY"]);
+		assert.notEqual(refused.status, 0);
+		assert.match(refused.stderr, /test keys/);
+		const guides = join(root, "live.json");
+		await writeFile(guides, JSON.stringify({ STRIPE_SECRET_KEY: { url: "https://dashboard.stripe.com/apikeys", steps: ["Switch to live mode and reveal the live secret key."], source: "https://docs.stripe.com/keys", verified: "2026-10-31" } }));
+		const noPrefix = run([...base, "--out", join(root, "b"), "--fields", "STRIPE_SECRET_KEY", "--guide-file", guides]);
+		assert.notEqual(noPrefix.status, 0);
+		const ok = run([...base, "--out", join(root, "c"), "--fields", "STRIPE_SECRET_KEY:sk_live_|rk_live_", "--guide-file", guides]);
+		assert.equal(ok.status, 0, ok.stderr);
+		const request = JSON.parse(await readFile(join(root, "c", "request.json"), "utf8"));
+		assert.deepEqual(request.fields[0].prefixes, ["sk_live_", "rk_live_"]);
+		assert.equal(checkValue(request, "STRIPE_SECRET_KEY", "sk_live_DEMO"), null);
+		assert.equal(checkValue(request, "STRIPE_SECRET_KEY", "sk_test_DEMO"), "prefix");
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});

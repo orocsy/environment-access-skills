@@ -38,7 +38,7 @@ node scripts/handoff.mjs prepare --platform resend --environment test --label 'R
 - `--lang en`：英文页面和提示；默认中文。对方用英文沟通时用它。
 - `--fields STRIPE_SECRET_KEY:rk_test_|sk_test_,STRIPE_WEBHOOK_SECRET:whsec_`：一次交接多个具名值，每个一格。冒号后是允许的开头，可省略。页面先检查再加密，接收端再检查一次。
 - 非 live 请求一律拒绝 `sk_live_`/`rk_live_`/`pk_live_` 开头的值，页面当场提示，不生成文件。
-- 每个具名值都必须有“在哪里找”的指引，页面在对应输入框上方显示步骤和官方链接。常用值在 [密钥目录](references/key-catalog.json)（Stripe 测试密钥、可公开密钥、Connect client ID、webhook 密钥，Resend API Key），省略的开头也从这里补全。目录里没有的值：先查平台官方文档，写成同样格式的 JSON，用 `--guide-file` 传入；没有指引就拒绝生成。指引要写清具体页面、按钮名、值的开头，以及容易拿错的相近值（例如 client ID 不是 `pk_` 可公开密钥）。
+- 每个具名值都必须有“在哪里找”的指引，页面在对应输入框上方显示步骤和官方链接。常用值在 [密钥目录](references/key-catalog.json)（Stripe 测试密钥、可公开密钥、Connect client ID、webhook 密钥，Resend API Key），省略的开头也从这里补全。目录只描述测试环境的值；`--environment live` 时必须用 `--guide-file` 提供查证过的正式环境指引，并在 `--fields` 里写明正式环境的开头（如 `sk_live_`）。目录里没有的值：先查平台官方文档，写成同样格式的 JSON，用 `--guide-file` 传入；没有指引就拒绝生成。指引要写清具体页面、按钮名、值的开头，以及容易拿错的相近值（例如 client ID 不是 `pk_` 可公开密钥）。
 - 页面拒绝时，提示出现在按钮正上方并滚动到可见处，不会“点了没反应”。
 
 替换路径为该任务自己的位置。私钥目录必须在所有 Git checkout 之外；输出目录必须新建。`prepare` 输出的 `shortCode`（如 `9F1C-87C4-21DA-C3C7`）也显示在页面上：把它通过另一渠道（如聊天）告诉对方，让对方核对后再粘贴。`prepare` 返回 requestId 和路径，不返回私钥内容。`test` 只是交接标签，不会自动在供应商创建沙箱。请求默认 24 小时，可用 `--hours 48`，上限 168 小时。
@@ -61,7 +61,7 @@ node scripts/handoff.mjs receive --request /PRIVATE/keys/REQUEST_ID.request.json
 # 单值请求另加 --env-name RESEND_API_KEY；已存在的变量须加 --replace true 才会覆盖。
 ```
 
-`--dotenv` 的文件若在 Git checkout 内，必须已被 Git 忽略且未被跟踪，否则拒绝并说明原因；写入是原子替换，权限 0600，只打印变量名。不要用 `--env-file` 这个名字：Node 会在脚本参数里也解析它并加载该文件。每个请求只能成功接收一次：写任何输出前先独占创建私钥旁的 `.used` 标记，写入失败会删除标记以便重试；`--replace` 会替换该变量的所有赋值行；同一 env 文件的写入会排队；文件里有多行值，或改动会影响其他变量时，拒绝写入；要再交接就重新 `prepare`。出错信息只含原因，不含值。
+`--dotenv` 的文件若在 Git checkout 内，必须已被 Git 忽略且未被跟踪，写入时的明文暂存副本（同目录下私有子文件夹里的同名文件）也必须被忽略，所以 `.gitignore` 要用不带开头 `/` 的规则（如 `.env.local` 或 `.env*`），否则写入前就拒绝并说明原因；写入是原子替换，权限 0600，只打印变量名。不要用 `--env-file` 这个名字：Node 会在脚本参数里也解析它并加载该文件。每个请求只能成功接收一次：写任何输出前先独占创建私钥旁的 `.used` 标记，写入失败会删除标记以便重试；`--replace` 会替换该变量的所有赋值行；同一 env 文件的写入会排队；文件里有多行值，或改动会影响其他变量时，拒绝写入；要再交接就重新 `prepare`。出错信息只含原因，不含值。
 
 只交密文文件。接收时核对请求、平台、环境、公钥配对、完整性和有效期；输出权限 0600、不覆盖现有文件、不写 Git 目录。Windows 须另检查目录 ACL，POSIX mode 不等于 Windows 权限保证。接收后不要 `cat`、读文件工具、截图或打印秘密；由程序直接导入目标密钥配置。拿到 Key 不自动授权发信、付款、推送、部署或真实客户操作。
 
