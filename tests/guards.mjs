@@ -45,6 +45,7 @@ try {
 			'writeFile(used, new Date().toISOString(), { flag: "w"',
 		],
 		["replace every assignment", 'sets(name, l) ? [] : [l]', "[l]"],
+		["env file lock", 'writeFile(lock, String(process.pid), { flag: "wx"', 'writeFile(lock, String(process.pid), { flag: "w"'],
 		["git-ignored env file", 'if (git("check-ignore", "-q").status !== 0)', "if (false)"],
 	]) {
 		assert.equal(original.split(before).length, 2);

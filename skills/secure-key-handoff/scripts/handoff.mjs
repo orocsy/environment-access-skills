@@ -13,6 +13,8 @@ import {
 import { dirname, resolve, join, relative, basename } from "node:path";
 import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
+import { parseEnv } from "node:util";
+import { tmpdir } from "node:os";
 
 const MAX = 16384;
 const NAME = /^[A-Z][A-Z0-9_]{0,63}$/;
@@ -363,18 +365,46 @@ function envLine(name, value) {
 		`${name} has characters an env file can't hold safely; use --out instead`,
 	);
 }
+// One install at a time per env file, so concurrent receivers can't drop each other's lines.
+async function withEnvLock(file, work) {
+	const id = `${await realpath(dirname(file))}/${basename(file)}`;
+	const lock = join(tmpdir(), `secure-key-handoff-${createHash("sha256").update(id).digest("hex").slice(0, 16)}.lock`);
+	for (let waited = 0; ; waited += 25) {
+		try {
+			await writeFile(lock, String(process.pid), { flag: "wx", mode: 0o600 });
+			break;
+		} catch (e) {
+			if (e.code !== "EEXIST") throw e;
+			if (waited >= 10000)
+				throw new SafeError(`Another install into this env file is still running; if none is, delete ${lock}`);
+			await new Promise((done) => setTimeout(done, 25));
+		}
+	}
+	try {
+		return await work();
+	} finally {
+		await rm(lock, { force: true });
+	}
+}
 async function installEnv(path, values, replace) {
 	const file = resolve(path);
 	await envFileAllowed(file);
-	let lines = [];
+	await withEnvLock(file, () => editEnv(file, values, replace));
+}
+async function editEnv(file, values, replace) {
+	let text = "";
 	try {
 		if ((await lstat(file)).isSymbolicLink())
 			throw new SafeError("The env file must not be a symbolic link");
-		lines = (await readFile(file, "utf8")).split("\n");
-		if (lines.at(-1) === "") lines.pop();
+		text = await readFile(file, "utf8");
 	} catch (e) {
 		if (e.code !== "ENOENT") throw e;
 	}
+	const before = parseEnv(text);
+	if (Object.values(before).some((v) => v.includes("\n")))
+		throw new SafeError("The env file has multi-line values this tool can't edit safely; add the keys by hand or use --out");
+	let lines = text.split("\n");
+	if (lines.at(-1) === "") lines.pop();
 	const sets = (name, l) =>
 		new RegExp(`^\\s*(?:export\\s+)?${name}\\s*=`).test(l);
 	const taken = Object.keys(values).filter((n) => lines.some((l) => sets(n, l)));
@@ -389,9 +419,15 @@ async function installEnv(path, values, replace) {
 		if (i < 0) lines.push(line);
 		else lines = lines.flatMap((l, j) => (j === i ? [line] : sets(name, l) ? [] : [l]));
 	}
+	const next = lines.join("\n") + "\n";
+	// The edit must change exactly the installed names, as Node's own parser reads the file.
+	const after = parseEnv(next);
+	const expected = { ...before, ...values };
+	if (Object.keys(after).length !== Object.keys(expected).length || Object.entries(expected).some(([k, v]) => after[k] !== v))
+		throw new SafeError("The env file has syntax this tool can't edit safely; add the keys by hand or use --out");
 	const temp = `${file}.${randomUUID()}.tmp`;
 	try {
-		await writeFile(temp, lines.join("\n") + "\n", { flag: "wx", mode: 0o600 });
+		await writeFile(temp, next, { flag: "wx", mode: 0o600 });
 		await rename(temp, file);
 	} finally {
 		await rm(temp, { force: true });

@@ -315,3 +315,48 @@ test("a failed install releases the claim so the same request can be retried", a
 		await rm(root, { recursive: true, force: true });
 	}
 });
+
+test("refuses to edit an env file whose multi-line values a line edit would corrupt", async () => {
+	const root = await mkdtemp(join(tmpdir(), "handoff-multi-"));
+	try {
+		await mkdir(join(root, "outside"));
+		const env = join(root, "outside", ".env");
+		for (const original of ['OTHER="first\nKEY=old\nlast"\n', 'KEY="a\nb"\nOTHER=1\n']) {
+			const info = await prepared(join(root, String(original.length)), []);
+			const enc = join(root, `${original.length}.json`);
+			run(["seal", "--request", info.delivery, "--out", enc, "--stdin", "true"], "re_DEMO_NEW\n");
+			await writeFile(env, original);
+			const r = run([
+				"receive", "--request", info.pinned, "--key", info.privateKey, "--input", enc,
+				"--dotenv", env, "--env-name", "KEY", "--replace", "true",
+			]);
+			assert.notEqual(r.status, 0, original);
+			assert.match(r.stderr, /multi-line|can't edit/);
+			assert.equal(r.stderr.includes("re_DEMO_NEW"), false);
+			assert.equal(await readFile(env, "utf8"), original, "file untouched");
+		}
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("different requests installing into one env file at once all land", async () => {
+	const root = await mkdtemp(join(tmpdir(), "handoff-shared-"));
+	try {
+		await mkdir(join(root, "outside"));
+		const env = join(root, "outside", ".env");
+		const jobs = [];
+		for (let i = 0; i < 6; i++) {
+			const info = await prepared(join(root, `r${i}`), []);
+			const enc = join(root, `r${i}.json`);
+			run(["seal", "--request", info.delivery, "--out", enc, "--stdin", "true"], `re_DEMO_${i}\n`);
+			jobs.push(["receive", "--request", info.pinned, "--key", info.privateKey, "--input", enc, "--dotenv", env, "--env-name", `KEY_${i}`]);
+		}
+		const results = await Promise.all(jobs.map(runAsync));
+		for (const r of results) assert.equal(r.status, 0, r.stderr);
+		const lines = (await readFile(env, "utf8")).trim().split("\n").sort();
+		assert.deepEqual(lines, Array.from({ length: 6 }, (_, i) => `KEY_${i}=re_DEMO_${i}`));
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
