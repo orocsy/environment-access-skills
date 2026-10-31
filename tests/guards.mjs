@@ -41,9 +41,10 @@ try {
 		["live key on a test request", 'request.environment !== "live" &&', "false &&"],
 		[
 			"single use",
-			'throw new SafeError("This request was already used; prepare a new one");',
-			"",
+			'writeFile(used, new Date().toISOString(), { flag: "wx"',
+			'writeFile(used, new Date().toISOString(), { flag: "w"',
 		],
+		["replace every assignment", 'sets(name, l) ? [] : [l]', "[l]"],
 		["git-ignored env file", 'if (git("check-ignore", "-q").status !== 0)', "if (false)"],
 	]) {
 		assert.equal(original.split(before).length, 2);

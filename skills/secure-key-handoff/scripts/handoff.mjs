@@ -375,20 +375,19 @@ async function installEnv(path, values, replace) {
 	} catch (e) {
 		if (e.code !== "ENOENT") throw e;
 	}
-	const at = (name) =>
-		lines.findIndex((l) =>
-			new RegExp(`^\\s*(?:export\\s+)?${name}\\s*=`).test(l),
-		);
-	const taken = Object.keys(values).filter((n) => at(n) >= 0);
+	const sets = (name, l) =>
+		new RegExp(`^\\s*(?:export\\s+)?${name}\\s*=`).test(l);
+	const taken = Object.keys(values).filter((n) => lines.some((l) => sets(n, l)));
 	if (taken.length && !replace)
 		throw new SafeError(
 			`Already set: ${taken.join(", ")}. Pass --replace true to change it`,
 		);
+	// Replace the first assignment and drop any later ones: the last one would win.
 	for (const [name, value] of Object.entries(values)) {
 		const line = envLine(name, value);
-		const i = at(name);
-		if (i >= 0) lines[i] = line;
-		else lines.push(line);
+		const i = lines.findIndex((l) => sets(name, l));
+		if (i < 0) lines.push(line);
+		else lines = lines.flatMap((l, j) => (j === i ? [line] : sets(name, l) ? [] : [l]));
 	}
 	const temp = `${file}.${randomUUID()}.tmp`;
 	try {
@@ -535,12 +534,6 @@ export async function main(args) {
 			);
 		const request = await json(o.request);
 		const used = join(dirname(resolve(o.key)), request.id + ".used");
-		try {
-			await lstat(used);
-			throw new SafeError("This request was already used; prepare a new one");
-		} catch (e) {
-			if (e.code !== "ENOENT") throw e;
-		}
 		const envelope = await json(await findResponse(o.input, request.id));
 		const info = await lstat(o.key);
 		if (
@@ -550,8 +543,9 @@ export async function main(args) {
 		)
 			throw new SafeError("Private key must be a regular mode-0600 file");
 		const secret = await open(request, envelope, await readFile(o.key, "utf8"));
+		let values;
 		if (o.dotenv) {
-			let values = fieldValues(request, secret);
+			values = fieldValues(request, secret);
 			if (values && o["env-name"])
 				throw new SafeError("--env-name is only for single-value requests");
 			if (!values) {
@@ -559,18 +553,27 @@ export async function main(args) {
 					throw new SafeError("A single-value request needs --env-name NAME");
 				values = { [o["env-name"]]: secret.trim() };
 			}
-			await installEnv(o.dotenv, values, o.replace === "true");
-			console.log(
-				`Installed ${Object.keys(values).join(", ")} into ${resolve(o.dotenv)}. No values printed.`,
-			);
-		} else {
-			await privateFile(o.out, secret);
-			console.log("Secret saved to a private file. No plaintext printed.");
 		}
-		await writeFile(used, new Date().toISOString(), {
-			flag: "wx",
-			mode: 0o600,
-		});
+		// Claim the request before writing anything, so a concurrent receiver writes nothing.
+		try {
+			await writeFile(used, new Date().toISOString(), { flag: "wx", mode: 0o600 });
+		} catch (e) {
+			if (e.code === "EEXIST")
+				throw new SafeError("This request was already used; prepare a new one");
+			throw e;
+		}
+		try {
+			if (o.dotenv) await installEnv(o.dotenv, values, o.replace === "true");
+			else await privateFile(o.out, secret);
+		} catch (e) {
+			await rm(used, { force: true });
+			throw e;
+		}
+		console.log(
+			o.dotenv
+				? `Installed ${Object.keys(values).join(", ")} into ${resolve(o.dotenv)}. No values printed.`
+				: "Secret saved to a private file. No plaintext printed.",
+		);
 	} else
 		throw new SafeError(
 			"Commands: prepare, seal, receive. See SKILL.md for options.",

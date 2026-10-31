@@ -11,7 +11,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import {
 	seal,
 	open,
@@ -21,6 +21,13 @@ import {
 const script = resolve("skills/secure-key-handoff/scripts/handoff.mjs");
 const run = (args, input) =>
 	spawnSync(process.execPath, [script, ...args], { encoding: "utf8", input });
+const runAsync = (args) =>
+	new Promise((done) => {
+		const child = spawn(process.execPath, [script, ...args]);
+		let stderr = "";
+		child.stderr.on("data", (d) => (stderr += d));
+		child.on("close", (status) => done({ status, stderr }));
+	});
 const git = (cwd, ...args) =>
 	spawnSync("git", args, { cwd, encoding: "utf8" });
 
@@ -239,6 +246,71 @@ test("decrypting rejects a live key on a test request and wrong field sets", asy
 		await assert.rejects(async () =>
 			open(sr, await seal(sr, "sk_live_DEMO"), await readFile(single.privateKey, "utf8")),
 		);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("--replace changes every assignment of a name, so the new value wins", async () => {
+	const root = await mkdtemp(join(tmpdir(), "handoff-dup-"));
+	try {
+		const info = await prepared(root, []);
+		const enc = join(root, "enc.json");
+		run(["seal", "--request", info.delivery, "--out", enc, "--stdin", "true"], "re_DEMO_NEW\n");
+		const env = join(root, "outside", ".env");
+		await mkdir(join(root, "outside"));
+		await writeFile(env, "KEY=old1\nOTHER=1\nexport KEY=old2\n");
+		const r = run([
+			"receive", "--request", info.pinned, "--key", info.privateKey, "--input", enc,
+			"--dotenv", env, "--env-name", "KEY", "--replace", "true",
+		]);
+		assert.equal(r.status, 0, r.stderr);
+		assert.equal(await readFile(env, "utf8"), "KEY=re_DEMO_NEW\nOTHER=1\n");
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("concurrent receivers: only the one that claims the request writes anything", async () => {
+	const root = await mkdtemp(join(tmpdir(), "handoff-race-"));
+	try {
+		const info = await prepared(root, []);
+		const enc = join(root, "enc.json");
+		run(["seal", "--request", info.delivery, "--out", enc, "--stdin", "true"], "re_DEMO_VALUE\n");
+		const outs = join(root, "outs");
+		await mkdir(outs);
+		const results = await Promise.all(
+			Array.from({ length: 6 }, (_, i) =>
+				runAsync([
+					"receive", "--request", info.pinned, "--key", info.privateKey,
+					"--input", enc, "--out", join(outs, `secret-${i}.txt`),
+				]),
+			),
+		);
+		assert.equal(results.filter((r) => r.status === 0).length, 1, "one receiver wins");
+		assert.equal((await readdir(outs)).length, 1, "losers wrote nothing");
+		for (const r of results.filter((r) => r.status !== 0)) assert.match(r.stderr, /already used/);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("a failed install releases the claim so the same request can be retried", async () => {
+	const root = await mkdtemp(join(tmpdir(), "handoff-retry-"));
+	try {
+		const info = await prepared(root, []);
+		const enc = join(root, "enc.json");
+		run(["seal", "--request", info.delivery, "--out", enc, "--stdin", "true"], "re_DEMO_VALUE\n");
+		await mkdir(join(root, "outside"));
+		const env = join(root, "outside", ".env");
+		await writeFile(env, "KEY=old\n");
+		const args = ["receive", "--request", info.pinned, "--key", info.privateKey, "--input", enc, "--dotenv", env, "--env-name", "KEY"];
+		const first = run(args);
+		assert.notEqual(first.status, 0);
+		assert.match(first.stderr, /Already set: KEY/);
+		const second = run([...args, "--replace", "true"]);
+		assert.equal(second.status, 0, second.stderr);
+		assert.equal(await readFile(env, "utf8"), "KEY=re_DEMO_VALUE\n");
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}

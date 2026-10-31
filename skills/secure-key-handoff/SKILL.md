@@ -59,7 +59,7 @@ node scripts/handoff.mjs receive --request /PRIVATE/keys/REQUEST_ID.request.json
 # 单值请求另加 --env-name RESEND_API_KEY；已存在的变量须加 --replace true 才会覆盖。
 ```
 
-`--dotenv` 的文件若在 Git checkout 内，必须已被 Git 忽略且未被跟踪，否则拒绝并说明原因；写入是原子替换，权限 0600，只打印变量名。不要用 `--env-file` 这个名字：Node 会在脚本参数里也解析它并加载该文件。每个请求只能成功接收一次（私钥旁写 `.used` 标记）；要再交接就重新 `prepare`。出错信息只含原因，不含值。
+`--dotenv` 的文件若在 Git checkout 内，必须已被 Git 忽略且未被跟踪，否则拒绝并说明原因；写入是原子替换，权限 0600，只打印变量名。不要用 `--env-file` 这个名字：Node 会在脚本参数里也解析它并加载该文件。每个请求只能成功接收一次：写任何输出前先独占创建私钥旁的 `.used` 标记，写入失败会删除标记以便重试；`--replace` 会替换该变量的所有赋值行；要再交接就重新 `prepare`。出错信息只含原因，不含值。
 
 只交密文文件。接收时核对请求、平台、环境、公钥配对、完整性和有效期；输出权限 0600、不覆盖现有文件、不写 Git 目录。Windows 须另检查目录 ACL，POSIX mode 不等于 Windows 权限保证。接收后不要 `cat`、读文件工具、截图或打印秘密；由程序直接导入目标密钥配置。拿到 Key 不自动授权发信、付款、推送、部署或真实客户操作。
 
