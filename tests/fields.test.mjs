@@ -388,3 +388,68 @@ test("an install waits while another holds the env file's lock", async () => {
 		await rm(root, { recursive: true, force: true });
 	}
 });
+
+test("catalog keys get their researched prefixes and guidance on the page", async () => {
+	const root = await mkdtemp(join(tmpdir(), "handoff-guide-"));
+	try {
+		const info = await prepared(root, ["--lang", "en", "--fields", "STRIPE_SECRET_KEY,RESEND_API_KEY"]);
+		const request = JSON.parse(await readFile(info.pinned, "utf8"));
+		assert.deepEqual(request.fields.map((f) => f.prefixes), [["sk_test_", "rk_test_"], ["re_"]]);
+		assert.equal(request.fields[1].guide.url, "https://resend.com/api-keys");
+		const page = await readFile(join(root, "delivery", "owner.html"), "utf8");
+		assert.ok(page.includes("Where to find it"));
+		assert.ok(page.includes('href="https://dashboard.stripe.com/apikeys"'));
+		assert.ok(page.includes("Resend does not show it again"));
+		assert.ok(page.includes('rel="noopener noreferrer"'));
+		assert.ok(page.includes('role="alert"'), "refusals are announced");
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("a key without researched guidance is refused; a guide file supplies it", async () => {
+	const root = await mkdtemp(join(tmpdir(), "handoff-unguided-"));
+	try {
+		const priv = join(root, "private");
+		const base = ["prepare", "--platform", "acme", "--environment", "test", "--label", "Acme", "--private-dir", priv];
+		const refused = run([...base, "--out", join(root, "a"), "--fields", "ACME_TOKEN:acme_"]);
+		assert.notEqual(refused.status, 0);
+		assert.match(refused.stderr, /No researched guidance for ACME_TOKEN/);
+		const guides = join(root, "guides.json");
+		await writeFile(guides, JSON.stringify({ ACME_TOKEN: { url: "https://acme.example/tokens", steps: ["Open Tokens and copy the test token."], source: "https://acme.example/docs/tokens", verified: "2026-10-31" } }));
+		const ok = run([...base, "--out", join(root, "b"), "--fields", "ACME_TOKEN:acme_", "--guide-file", guides]);
+		assert.equal(ok.status, 0, ok.stderr);
+		await writeFile(guides, JSON.stringify({ ACME_TOKEN: { url: "http://acme.example/tokens", steps: ["x"], source: "https://acme.example", verified: "2026-10-31" } }));
+		const insecure = run([...base, "--out", join(root, "c"), "--fields", "ACME_TOKEN:acme_", "--guide-file", guides]);
+		assert.notEqual(insecure.status, 0);
+		assert.match(insecure.stderr, /guide/);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("serve shows the page on 127.0.0.1 only, uncached, and nothing else", async () => {
+	const root = await mkdtemp(join(tmpdir(), "handoff-serve-"));
+	const info = await prepared(root, ["--lang", "en", "--fields", "RESEND_API_KEY"]);
+	const child = spawn(process.execPath, [script, "serve", "--page", join(root, "delivery", "owner.html"), "--port", "0"]);
+	try {
+		const url = await new Promise((done, fail) => {
+			let out = "";
+			child.stdout.on("data", (d) => {
+				out += d;
+				const m = out.match(/"url":"([^"]+)"/);
+				if (m) done(m[1]);
+			});
+			child.on("exit", () => fail(new Error("serve exited")));
+		});
+		assert.match(url, /^http:\/\/127\.0\.0\.1:\d+\/$/);
+		const page = await fetch(url);
+		assert.equal(page.status, 200);
+		assert.equal(page.headers.get("cache-control"), "no-store");
+		assert.ok((await page.text()).includes(info.shortCode));
+		assert.equal((await fetch(new URL("/request.json", url))).status, 404);
+	} finally {
+		child.kill();
+		await rm(root, { recursive: true, force: true });
+	}
+});

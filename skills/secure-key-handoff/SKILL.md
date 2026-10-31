@@ -38,6 +38,8 @@ node scripts/handoff.mjs prepare --platform resend --environment test --label 'R
 - `--lang en`：英文页面和提示；默认中文。对方用英文沟通时用它。
 - `--fields STRIPE_SECRET_KEY:rk_test_|sk_test_,STRIPE_WEBHOOK_SECRET:whsec_`：一次交接多个具名值，每个一格。冒号后是允许的开头，可省略。页面先检查再加密，接收端再检查一次。
 - 非 live 请求一律拒绝 `sk_live_`/`rk_live_`/`pk_live_` 开头的值，页面当场提示，不生成文件。
+- 每个具名值都必须有“在哪里找”的指引，页面在对应输入框上方显示步骤和官方链接。常用值在 [密钥目录](references/key-catalog.json)（Stripe 测试密钥、可公开密钥、Connect client ID、webhook 密钥，Resend API Key），省略的开头也从这里补全。目录里没有的值：先查平台官方文档，写成同样格式的 JSON，用 `--guide-file` 传入；没有指引就拒绝生成。指引要写清具体页面、按钮名、值的开头，以及容易拿错的相近值（例如 client ID 不是 `pk_` 可公开密钥）。
+- 页面拒绝时，提示出现在按钮正上方并滚动到可见处，不会“点了没反应”。
 
 替换路径为该任务自己的位置。私钥目录必须在所有 Git checkout 之外；输出目录必须新建。`prepare` 输出的 `shortCode`（如 `9F1C-87C4-21DA-C3C7`）也显示在页面上：把它通过另一渠道（如聊天）告诉对方，让对方核对后再粘贴。`prepare` 返回 requestId 和路径，不返回私钥内容。`test` 只是交接标签，不会自动在供应商创建沙箱。请求默认 24 小时，可用 `--hours 48`，上限 168 小时。
 
@@ -67,10 +69,13 @@ node scripts/handoff.mjs receive --request /PRIVATE/keys/REQUEST_ID.request.json
 
 用户要给 agent 一个密钥时默认走这条，不让用户在聊天里粘贴：
 
-1. 先确定变量名、环境、要写入哪个被忽略的 env 文件；私钥目录用 `~/.config/secure-key-handoff/<项目>/`。
-2. `prepare --lang <用户语言> --fields ...`，把 `owner.html` 作为文件发给用户，在聊天里说出 `shortCode`，并用一句话说明要去平台哪里复制哪个值。
-3. 用户说“好了”后，`receive --input ~/Downloads --dotenv <文件>`。只报告写入了哪些变量名，不读取、不打印值。
-4. 用完提醒用户删掉下载的密文文件；平台上的撤销仍由用户决定。
+1. 先查代码确定真正要的变量名和用途（只要当前工作用得到的），再确定环境、要写入哪个被忽略的 env 文件；私钥目录用 `~/.config/secure-key-handoff/<项目>/`。
+2. 给出获取路径前先查官方文档：目录里已有且 `verified` 日期较近就用；否则查文档后写 `--guide-file`（或更新目录并注明 `source` 和 `verified`）。不凭记忆写菜单路径。
+3. `prepare --lang <用户语言> --fields ...`。
+4. 不要只发 `owner.html` 文件：有些内置浏览器（例如 Claude Code 的浏览器面板）对 `file://` 页面不运行脚本，按钮会完全没反应。运行 `serve --page <out>/owner.html`（只监听 127.0.0.1，后台常驻），在用户能用的浏览器里打开它打印的地址，确认页面脚本在运行（底部有效期显示为本地时间），再把地址告诉用户。交接完成前不要关闭这个标签页或服务。
+5. 在聊天里说出 `shortCode`，并说明每个框分别要什么、哪些值不需要（例如可公开密钥不是服务器密钥）。
+6. 用户说“好了”后，`receive --input ~/Downloads --dotenv <文件>`。只报告写入了哪些变量名，不读取、不打印值；再用只读请求验证密钥可用（只报告状态码）。
+7. 用完停止 `serve`，提醒用户删掉下载的密文文件；平台上的撤销仍由用户决定。
 
 ## 必须保留的边界
 

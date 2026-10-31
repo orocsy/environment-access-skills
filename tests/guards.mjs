@@ -20,6 +20,11 @@ try {
 		recursive: true,
 	});
 	await mkdir(join(scratch, "tests"));
+	await mkdir(join(scratch, "skills/secure-key-handoff/references"));
+	await copyFile(
+		resolve("skills/secure-key-handoff/references/key-catalog.json"),
+		join(scratch, "skills/secure-key-handoff/references/key-catalog.json"),
+	);
 	for (const file of ["handoff.test.mjs", "fields.test.mjs"])
 		await copyFile(resolve("tests", file), join(scratch, "tests", file));
 	const target = join(scratch, "skills/secure-key-handoff/scripts/handoff.mjs");
@@ -45,6 +50,7 @@ try {
 			'writeFile(used, new Date().toISOString(), { flag: "w"',
 		],
 		["replace every assignment", 'sets(name, l) ? [] : [l]', "[l]"],
+		["researched guidance required", "if (!guide)", "if (false)"],
 		["env file lock", 'writeFile(lock, String(process.pid), { flag: "wx"', 'writeFile(lock, String(process.pid), { flag: "w"'],
 		["git-ignored env file", 'if (git("check-ignore", "-q").status !== 0)', "if (false)"],
 	]) {

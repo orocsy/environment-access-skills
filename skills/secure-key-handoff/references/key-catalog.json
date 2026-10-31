@@ -1,0 +1,86 @@
+{
+	"STRIPE_SECRET_KEY": {
+		"prefixes": ["sk_test_", "rk_test_"],
+		"guide": {
+			"url": "https://dashboard.stripe.com/apikeys",
+			"steps": [
+				"Sign in to Stripe and switch to your sandbox (test mode). The dashboard must not say Live.",
+				"Open API keys from the link below.",
+				"Under Standard keys, find Secret key and click Reveal test key, then copy it (starts sk_test_). A restricted key from Restricted keys (rk_test_) also works."
+			],
+			"note": "Stripe recommends restricted keys for new integrations. Never paste a live key (sk_live_ or rk_live_) into a test request.",
+			"source": "https://docs.stripe.com/keys",
+			"verified": "2026-10-31"
+		}
+	},
+	"STRIPE_PUBLISHABLE_KEY": {
+		"prefixes": ["pk_test_"],
+		"guide": {
+			"url": "https://dashboard.stripe.com/apikeys",
+			"steps": [
+				"Sign in to Stripe and switch to your sandbox (test mode).",
+				"Open API keys from the link below.",
+				"Under Standard keys, copy Publishable key (starts pk_test_). It is shown without revealing."
+			],
+			"note": "A publishable key is safe to expose; it is used by web and mobile checkout, not by the server.",
+			"source": "https://docs.stripe.com/keys",
+			"verified": "2026-10-31"
+		}
+	},
+	"STRIPE_CONNECT_CLIENT_ID": {
+		"prefixes": ["ca_"],
+		"guide": {
+			"url": "https://dashboard.stripe.com/settings/connect/onboarding-options/oauth",
+			"steps": [
+				"Sign in to Stripe and switch to test mode.",
+				"Open Connect OAuth settings from the link below. If OAuth is off, turn it on.",
+				"Copy the Test mode client ID (starts ca_)."
+			],
+			"note": "This page appears only after the Connect platform setup is finished. If you see Getting started instead, stop and tell the receiver; the client ID is not the publishable key (pk_).",
+			"source": "https://docs.stripe.com/connect/oauth-reference",
+			"verified": "2026-10-31"
+		}
+	},
+	"STRIPE_WEBHOOK_SECRET": {
+		"prefixes": ["whsec_"],
+		"guide": {
+			"url": "https://dashboard.stripe.com/webhooks",
+			"steps": [
+				"Sign in to Stripe and switch to your sandbox (test mode).",
+				"Open Webhooks (in Workbench) from the link below and select the endpoint the receiver named. To add one: Create an event destination, choose Your account, pick the events, then Webhook endpoint and its URL.",
+				"On the endpoint page click Reveal secret and copy it (starts whsec_)."
+			],
+			"note": "Each endpoint has its own secret, and test and live secrets differ. For local development the receiver can use stripe listen instead.",
+			"source": "https://docs.stripe.com/webhooks",
+			"verified": "2026-10-31"
+		}
+	},
+	"STRIPE_CONNECT_WEBHOOK_SECRET": {
+		"prefixes": ["whsec_"],
+		"guide": {
+			"url": "https://dashboard.stripe.com/webhooks",
+			"steps": [
+				"Sign in to Stripe and switch to your sandbox (test mode).",
+				"Open Webhooks (in Workbench) and select the endpoint that listens to Connected accounts. To add one: Create an event destination, choose Connected accounts, pick the events, then Webhook endpoint and its URL.",
+				"On the endpoint page click Reveal secret and copy it (starts whsec_)."
+			],
+			"note": "Connected-account events (direct charges) need a Connected accounts destination; its secret differs from Your account endpoints. Locally the receiver can use stripe listen --forward-connect-to.",
+			"source": "https://docs.stripe.com/webhooks",
+			"verified": "2026-10-31"
+		}
+	},
+	"RESEND_API_KEY": {
+		"prefixes": ["re_"],
+		"guide": {
+			"url": "https://resend.com/api-keys",
+			"steps": [
+				"Sign in to Resend and open API Keys from the link below.",
+				"Click Create API Key. Name it for where it will run (for example the project and local), and choose Sending access, or Full access only if the receiver asked for it.",
+				"Copy the key right away (starts re_). Resend does not show it again."
+			],
+			"note": "Use a separate key for local development; never reuse the production key.",
+			"source": "https://resend.com/docs/api-reference/api-keys/create-api-key",
+			"verified": "2026-10-31"
+		}
+	}
+}

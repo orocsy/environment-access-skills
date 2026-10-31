@@ -12,6 +12,7 @@ import {
 } from "node:fs/promises";
 import { dirname, resolve, join, relative, basename } from "node:path";
 import { spawnSync } from "node:child_process";
+import { createServer } from "node:http";
 import { pathToFileURL } from "node:url";
 import { parseEnv } from "node:util";
 import { tmpdir } from "node:os";
@@ -31,6 +32,23 @@ const binding = (r) =>
 	});
 const shortCode = (fingerprint) =>
 	String(fingerprint).slice(0, 16).toUpperCase().match(/.{4}/g).join("-");
+// Where to find a key: researched from the platform's own docs (references/key-catalog.json).
+function validGuide(g) {
+	const text = (v, max) => typeof v === "string" && v.length > 0 && v.length <= max;
+	const https = (v) => text(v, 300) && /^https:\/\/[^\s"'<>]+$/.test(v);
+	return (
+		g !== null &&
+		typeof g === "object" &&
+		https(g.url) &&
+		https(g.source) &&
+		/^\d{4}-\d{2}-\d{2}$/.test(g.verified ?? "") &&
+		Array.isArray(g.steps) &&
+		g.steps.length >= 1 &&
+		g.steps.length <= 8 &&
+		g.steps.every((step) => text(step, 400)) &&
+		(g.note === undefined || text(g.note, 400))
+	);
+}
 function validateFields(fields) {
 	if (fields === undefined) return true;
 	return (
@@ -43,7 +61,8 @@ function validateFields(fields) {
 				NAME.test(f.name) &&
 				Array.isArray(f.prefixes) &&
 				f.prefixes.length <= 5 &&
-				f.prefixes.every((p) => /^[A-Za-z0-9_-]{1,32}$/.test(p)),
+				f.prefixes.every((p) => /^[A-Za-z0-9_-]{1,32}$/.test(p)) &&
+				(f.guide === undefined || validGuide(f.guide)),
 		)
 	);
 }
@@ -241,6 +260,8 @@ const PAGE_TEXT = {
 		paste: "粘贴本次要交接的密钥",
 		aria: "粘贴密钥",
 		starts: "应以此开头：",
+		where: "在哪里找",
+		open: "打开",
 		show: "显示粘贴内容",
 		button: "加密并下载",
 		code: "核对码",
@@ -263,6 +284,8 @@ const PAGE_TEXT = {
 		paste: "Paste the key for this handoff",
 		aria: "Paste key",
 		starts: "Starts with:",
+		where: "Where to find it",
+		open: "Open",
 		show: "Show what I pasted",
 		button: "Encrypt and download",
 		code: "Check code",
@@ -303,12 +326,15 @@ export function ownerPage(request) {
 			const hint = f.prefixes.length
 				? `<small>${t.starts} ${escape(f.prefixes.join(" / "))}</small>`
 				: "";
-			return `<label for="f${i}">${escape(f.name || t.paste)}</label>${hint}<textarea id="f${i}" class="mask" data-name="${escape(f.name)}" required autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="${escape(f.name || t.aria)}"></textarea>`;
+			const guide = f.guide
+				? `<details open><summary>${t.where}</summary><ol>${f.guide.steps.map((step) => `<li>${escape(step)}</li>`).join("")}</ol><a href="${escape(f.guide.url)}" target="_blank" rel="noopener noreferrer">${t.open} ${escape(new URL(f.guide.url).host)}</a>${f.guide.note ? `<small>${escape(f.guide.note)}</small>` : ""}</details>`
+				: "";
+			return `<label for="f${i}">${escape(f.name || t.paste)}</label>${hint}${guide}<textarea id="f${i}" class="mask" data-name="${escape(f.name)}" required autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="${escape(f.name || t.aria)}"></textarea>`;
 		})
 		.join("");
 	const payload = JSON.stringify(request).replace(/</g, "\\u003c");
 	const messages = JSON.stringify(t).replace(/</g, "\\u003c");
-	return `<!doctype html><html lang="${lang === "en" ? "en" : "zh-CN"}"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none';script-src 'unsafe-inline';style-src 'unsafe-inline';connect-src 'none';form-action 'none';base-uri 'none'"><title>${t.title}</title><style>body{max-width:620px;margin:40px auto;padding:24px;font:16px/1.7 system-ui;color:#173449}label{display:block;margin-top:12px;font-weight:600}textarea,button{box-sizing:border-box;width:100%;padding:14px;margin:8px 0}textarea{height:90px;font-family:ui-monospace,monospace}.mask{-webkit-text-security:disc;text-security:disc}.show{font-weight:400}.show input{width:auto;margin-right:8px}button{background:#155e75;color:white;border:0;border-radius:8px;font-size:16px}small{display:block;overflow-wrap:anywhere;color:#526477}.code{font:600 20px ui-monospace,monospace;letter-spacing:1px}output{display:block;font-weight:600}</style><h1>${escape(request.label)}</h1><p>${t.platform}${escape(request.platform)} · ${t.environment}${escape(request.environment)}<br>${t.intro}</p><p>${t.code}: <span class="code">${escape(shortCode(request.fingerprint))}</span><small>${t.codeNote}</small></p><form>${inputs}<label class="show"><input type="checkbox" id="show">${t.show}</label><button>${t.button}</button></form><output aria-live="polite"></output><p><small>${t.note} <time id="expires" datetime="${escape(request.expiresAt)}">${escape(request.expiresAt)}</time>${t.noteEnd}<br>SHA-256: ${escape(request.fingerprint)}</small></p><script>const request=${payload};const T=${messages};const seal=${seal.toString()};const checkValue=${checkValue.toString()};const boxes=[...document.querySelectorAll('textarea')];const expires=document.getElementById('expires');expires.textContent=new Date(request.expiresAt).toLocaleString();document.getElementById('show').addEventListener('change',e=>boxes.forEach(b=>b.classList.toggle('mask',!e.target.checked)));document.querySelector('form').addEventListener('submit',async e=>{e.preventDefault();const status=document.querySelector('output');const read=b=>b.dataset.name?b.value.trim():b.value;for(const b of boxes){const problem=checkValue(request,b.dataset.name,read(b));if(problem){status.textContent=T[problem].replace('{name}',b.dataset.name||T.value);b.focus();return}}try{const secret=request.fields?JSON.stringify(Object.fromEntries(boxes.map(b=>[b.dataset.name,read(b)]))):read(boxes[0]);const data=await seal(request,secret);const url=URL.createObjectURL(new Blob([JSON.stringify(data)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download=request.platform+'-'+request.environment+'-'+request.id.slice(0,8)+'-encrypted.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);boxes.forEach(b=>{b.value='';b.classList.add('mask')});document.getElementById('show').checked=false;status.textContent=T.done;}catch{status.textContent=T.failed}});</script></html>`;
+	return `<!doctype html><html lang="${lang === "en" ? "en" : "zh-CN"}"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none';script-src 'unsafe-inline';style-src 'unsafe-inline';connect-src 'none';form-action 'none';base-uri 'none'"><title>${t.title}</title><style>body{max-width:620px;margin:40px auto;padding:24px;font:16px/1.7 system-ui;color:#173449}label{display:block;margin-top:12px;font-weight:600}textarea,button{box-sizing:border-box;width:100%;padding:14px;margin:8px 0}textarea{height:90px;font-family:ui-monospace,monospace}.mask{-webkit-text-security:disc;text-security:disc}.show{font-weight:400}.show input{width:auto;margin-right:8px}button{background:#155e75;color:white;border:0;border-radius:8px;font-size:16px}small{display:block;overflow-wrap:anywhere;color:#526477}.code{font:600 20px ui-monospace,monospace;letter-spacing:1px}output{display:block;font-weight:600}output:not(:empty){padding:12px;border-radius:8px;background:#fef3c7;border:2px solid #b45309}details{margin:6px 0 4px;font-size:15px}summary{cursor:pointer;color:#155e75}details ol{margin:6px 0;padding-left:22px}</style><h1>${escape(request.label)}</h1><p>${t.platform}${escape(request.platform)} · ${t.environment}${escape(request.environment)}<br>${t.intro}</p><p>${t.code}: <span class="code">${escape(shortCode(request.fingerprint))}</span><small>${t.codeNote}</small></p><form>${inputs}<label class="show"><input type="checkbox" id="show">${t.show}</label><output role="alert" aria-live="assertive"></output><button>${t.button}</button></form><p><small>${t.note} <time id="expires" datetime="${escape(request.expiresAt)}">${escape(request.expiresAt)}</time>${t.noteEnd}<br>SHA-256: ${escape(request.fingerprint)}</small></p><script>const request=${payload};const T=${messages};const seal=${seal.toString()};const checkValue=${checkValue.toString()};const boxes=[...document.querySelectorAll('textarea')];const expires=document.getElementById('expires');expires.textContent=new Date(request.expiresAt).toLocaleString();document.getElementById('show').addEventListener('change',e=>boxes.forEach(b=>b.classList.toggle('mask',!e.target.checked)));document.querySelector('form').addEventListener('submit',async e=>{e.preventDefault();const status=document.querySelector('output');const read=b=>b.dataset.name?b.value.trim():b.value;for(const b of boxes){const problem=checkValue(request,b.dataset.name,read(b));if(problem){status.textContent=T[problem].replace('{name}',b.dataset.name||T.value);status.scrollIntoView({block:'center'});b.focus();return}}try{const secret=request.fields?JSON.stringify(Object.fromEntries(boxes.map(b=>[b.dataset.name,read(b)]))):read(boxes[0]);const data=await seal(request,secret);const url=URL.createObjectURL(new Blob([JSON.stringify(data)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download=request.platform+'-'+request.environment+'-'+request.id.slice(0,8)+'-encrypted.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);boxes.forEach(b=>{b.value='';b.classList.add('mask')});document.getElementById('show').checked=false;status.textContent=T.done;status.scrollIntoView({block:'center'});}catch{status.textContent=T.failed;status.scrollIntoView({block:'center'})}});</script></html>`;
 }
 async function json(path) {
 	const raw = await readFile(path, "utf8");
@@ -468,6 +494,24 @@ function parseFields(spec) {
 		);
 	return fields;
 }
+// Every named key needs researched guidance: the catalog, or a --guide-file the agent wrote from the
+// platform's docs. Prefixes the caller left out come from the catalog.
+async function withGuides(fields, guideFile) {
+	if (!fields) return fields;
+	const catalog = JSON.parse(await readFile(new URL("../references/key-catalog.json", import.meta.url), "utf8"));
+	const extra = guideFile ? JSON.parse(await readFile(guideFile, "utf8")) : {};
+	return fields.map((f) => {
+		const entry = catalog[f.name];
+		const guide = extra[f.name] ?? entry?.guide;
+		if (!guide)
+			throw new SafeError(
+				`No researched guidance for ${f.name}. Check the platform's docs and pass --guide-file, or add it to references/key-catalog.json`,
+			);
+		if (!validGuide(guide))
+			throw new SafeError(`The guide for ${f.name} needs an https url and source, a verified date and 1 to 8 steps`);
+		return { ...f, prefixes: f.prefixes.length ? f.prefixes : (entry?.prefixes ?? []), guide };
+	});
+}
 function options(args) {
 	const o = {};
 	for (let i = 0; i < args.length; i += 2) {
@@ -496,7 +540,7 @@ export async function main(args) {
 			throw new SafeError("hours must be 0 to 168");
 		if (o.lang && !["zh", "en"].includes(o.lang))
 			throw new SafeError("lang must be zh or en");
-		const fields = parseFields(o.fields);
+		const fields = await withGuides(parseFields(o.fields), o["guide-file"]);
 		await outsideGit(resolve(o["private-dir"]));
 		const { privateKey, publicKey } = generateKeyPairSync("rsa", {
 			modulusLength: 4096,
@@ -566,6 +610,25 @@ export async function main(args) {
 			mode: 0o600,
 		});
 		console.log("Encrypted response written. No secret printed.");
+	} else if (mode === "serve") {
+		// For an agent receiver: a browser pane may block scripts on file:// pages, so serve the page
+		// from this machine only. One path, no caching; everything else is 404.
+		if (!o.page) throw new SafeError("serve requires --page owner.html");
+		const page = await readFile(o.page, "utf8");
+		const port = Number(o.port ?? 0);
+		if (!Number.isInteger(port) || port < 0 || port > 65535) throw new SafeError("port must be 0 to 65535");
+		const server = createServer((req, res) => {
+			const ok = req.method === "GET" && (req.url === "/" || req.url === "/owner.html");
+			res.writeHead(ok ? 200 : 404, {
+				"Content-Type": ok ? "text/html; charset=utf-8" : "text/plain",
+				"Cache-Control": "no-store",
+				"X-Content-Type-Options": "nosniff",
+				"Referrer-Policy": "no-referrer",
+			});
+			res.end(ok ? page : "Not found");
+		});
+		await new Promise((done) => server.listen(port, "127.0.0.1", done));
+		console.log(JSON.stringify({ url: `http://127.0.0.1:${server.address().port}/` }));
 	} else if (mode === "receive") {
 		if (!o.request || !o.key || !o.input || !(o.out || o.dotenv))
 			throw new SafeError(
@@ -615,7 +678,7 @@ export async function main(args) {
 		);
 	} else
 		throw new SafeError(
-			"Commands: prepare, seal, receive. See SKILL.md for options.",
+			"Commands: prepare, seal, serve, receive. See SKILL.md for options.",
 		);
 }
 async function readStdin() {
