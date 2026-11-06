@@ -25,3 +25,6 @@ jobs:
       - name: Offline browser handoff
         if: runner.os == 'Linux'
         run: npm run test:browser
+      - name: Browser failure-injection checks
+        if: runner.os == 'Linux'
+        run: npm run test:browser:guards

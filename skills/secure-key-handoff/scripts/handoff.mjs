@@ -14,6 +14,7 @@ import { dirname, resolve, join, relative, basename } from "node:path";
 import { spawnSync } from "node:child_process";
 import { createServer } from "node:http";
 import { pathToFileURL } from "node:url";
+import { realpathSync } from "node:fs";
 import { parseEnv } from "node:util";
 import { tmpdir } from "node:os";
 
@@ -269,7 +270,11 @@ const PAGE_TEXT = {
 		note: "本页不联网、不保存输入。只使用接收方通过已确认渠道提供的文件。不要发送原始密钥或截图。请求有效期至",
 		noteEnd: "；该期限不等于撤销平台密钥。",
 		value: "密钥",
-		done: "已生成加密文件。请把下载的文件交给接收方，并清空剪贴板。",
+		done: "加密完成，已请求浏览器下载。请在浏览器下载列表确认文件是否保存；本页无法读取你的下载目录。",
+        fallback: "没有找到下载？可重试下载，或复制下面的密文交给接收方。这里不包含原始密钥。",
+        retry: "重新下载加密文件", copy: "复制加密结果", encrypted: "加密结果（密文）",
+        copied: "密文已复制，可以交给接收方。", manual: "自动复制不可用。请选中下面的密文，按 Command+C（Windows 按 Ctrl+C）复制。",
+        blocked: "加密完成，但浏览器未能启动下载。请使用下面的重新下载或复制密文。",
 		failed: "未生成文件：请检查密钥是否为空、请求是否过期，或联系接收方。",
 		empty: "未生成文件：{name} 为空。",
 		prefix: "未生成文件：{name} 的开头与要求不符，请确认复制的是正确的密钥。",
@@ -294,7 +299,11 @@ const PAGE_TEXT = {
 		note: "This page makes no network requests and saves nothing. Only use a file the receiver sent you through a channel you trust. Never send the raw key or a screenshot. Request valid until",
 		noteEnd: ". Expiry does not revoke the key on the platform.",
 		value: "The key",
-		done: "Encrypted file downloaded. Send that file to the receiver, then clear your clipboard.",
+		done: "Encrypted. A browser download was requested. Check your browser downloads to confirm the file was saved; this page cannot read your download folder.",
+        fallback: "Cannot find the download? Retry or copy the ciphertext below to the receiver. It contains no plaintext key.",
+        retry: "Download encrypted file again", copy: "Copy encrypted result", encrypted: "Encrypted result (ciphertext)",
+        copied: "Ciphertext copied. You can send it to the receiver.", manual: "Automatic copy is unavailable. Select the ciphertext below and press Command+C (Ctrl+C on Windows).",
+        blocked: "Encrypted, but the browser could not start the download. Retry or copy the ciphertext below.",
 		failed:
 			"No file created: the key may be empty or the request expired. Contact the receiver.",
 		empty: "No file created: {name} is empty.",
@@ -334,7 +343,7 @@ export function ownerPage(request) {
 		.join("");
 	const payload = JSON.stringify(request).replace(/</g, "\\u003c");
 	const messages = JSON.stringify(t).replace(/</g, "\\u003c");
-	return `<!doctype html><html lang="${lang === "en" ? "en" : "zh-CN"}"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none';script-src 'unsafe-inline';style-src 'unsafe-inline';connect-src 'none';form-action 'none';base-uri 'none'"><title>${t.title}</title><style>body{max-width:620px;margin:40px auto;padding:24px;font:16px/1.7 system-ui;color:#173449}label{display:block;margin-top:12px;font-weight:600}textarea,button{box-sizing:border-box;width:100%;padding:14px;margin:8px 0}textarea{height:90px;font-family:ui-monospace,monospace}.mask{-webkit-text-security:disc;text-security:disc}.show{font-weight:400}.show input{width:auto;margin-right:8px}button{background:#155e75;color:white;border:0;border-radius:8px;font-size:16px}small{display:block;overflow-wrap:anywhere;color:#526477}.code{font:600 20px ui-monospace,monospace;letter-spacing:1px}output{display:block;font-weight:600}output:not(:empty){padding:12px;border-radius:8px;background:#fef3c7;border:2px solid #b45309}details{margin:6px 0 4px;font-size:15px}summary{cursor:pointer;color:#155e75}details ol{margin:6px 0;padding-left:22px}</style><h1>${escape(request.label)}</h1><p>${t.platform}${escape(request.platform)} · ${t.environment}${escape(request.environment)}<br>${t.intro}</p><p>${t.code}: <span class="code">${escape(shortCode(request.fingerprint))}</span><small>${t.codeNote}</small></p><form>${inputs}<label class="show"><input type="checkbox" id="show">${t.show}</label><output role="alert" aria-live="assertive"></output><button>${t.button}</button></form><p><small>${t.note} <time id="expires" datetime="${escape(request.expiresAt)}">${escape(request.expiresAt)}</time>${t.noteEnd}<br>SHA-256: ${escape(request.fingerprint)}</small></p><script>const request=${payload};const T=${messages};const seal=${seal.toString()};const checkValue=${checkValue.toString()};const boxes=[...document.querySelectorAll('textarea')];const expires=document.getElementById('expires');expires.textContent=new Date(request.expiresAt).toLocaleString();document.getElementById('show').addEventListener('change',e=>boxes.forEach(b=>b.classList.toggle('mask',!e.target.checked)));document.querySelector('form').addEventListener('submit',async e=>{e.preventDefault();const status=document.querySelector('output');const read=b=>b.dataset.name?b.value.trim():b.value;for(const b of boxes){const problem=checkValue(request,b.dataset.name,read(b));if(problem){status.textContent=T[problem].replace('{name}',b.dataset.name||T.value);status.scrollIntoView({block:'center'});b.focus();return}}try{const secret=request.fields?JSON.stringify(Object.fromEntries(boxes.map(b=>[b.dataset.name,read(b)]))):read(boxes[0]);const data=await seal(request,secret);const url=URL.createObjectURL(new Blob([JSON.stringify(data)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download=request.platform+'-'+request.environment+'-'+request.id.slice(0,8)+'-encrypted.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);boxes.forEach(b=>{b.value='';b.classList.add('mask')});document.getElementById('show').checked=false;status.textContent=T.done;status.scrollIntoView({block:'center'});}catch{status.textContent=T.failed;status.scrollIntoView({block:'center'})}});</script></html>`;
+	return `<!doctype html><html lang="${lang === "en" ? "en" : "zh-CN"}"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none';script-src 'unsafe-inline';style-src 'unsafe-inline';connect-src 'none';form-action 'none';base-uri 'none'"><title>${t.title}</title><style>:root{color-scheme:light}html{background:#f3f6fa;color:#173449}body{background:#fff;border-radius:12px;max-width:620px;margin:40px auto;padding:24px;font:16px/1.7 system-ui;color:#173449}label{display:block;margin-top:12px;font-weight:600}textarea,button{box-sizing:border-box;width:100%;padding:14px;margin:8px 0}textarea{background:#fff;color:#173449;border:2px solid #829ab1;border-radius:6px;height:90px;font-family:ui-monospace,monospace}.mask{-webkit-text-security:disc;text-security:disc}.show{font-weight:400}.show input{width:auto;margin-right:8px}button{background:#155e75;color:white;border:0;border-radius:8px;font-size:16px}small{display:block;overflow-wrap:anywhere;color:#526477}.code{font:600 20px ui-monospace,monospace;letter-spacing:1px}output{display:block;font-weight:600}output:not(:empty){padding:12px;border-radius:8px;background:#fef3c7;border:2px solid #b45309}details{margin:6px 0 4px;font-size:15px}a{color:#155e75}button:disabled{opacity:.65}#result{margin-top:20px}#ciphertext{height:130px}summary{cursor:pointer;color:#155e75}details ol{margin:6px 0;padding-left:22px}</style><h1>${escape(request.label)}</h1><p>${t.platform}${escape(request.platform)} · ${t.environment}${escape(request.environment)}<br>${t.intro}</p><p>${t.code}: <span class="code">${escape(shortCode(request.fingerprint))}</span><small>${t.codeNote}</small></p><form>${inputs}<label class="show"><input type="checkbox" id="show">${t.show}</label><output role="alert" aria-live="assertive"></output><button>${t.button}</button></form><section id="result" hidden><p>${t.fallback}</p><a id="retry">${t.retry}</a><label for="ciphertext">${t.encrypted}</label><textarea id="ciphertext" readonly autocomplete="off" spellcheck="false"></textarea><button type="button" id="copy">${t.copy}</button><p id="copy-status" role="status"></p></section><p><small>${t.note} <time id="expires" datetime="${escape(request.expiresAt)}">${escape(request.expiresAt)}</time>${t.noteEnd}<br>SHA-256: ${escape(request.fingerprint)}</small></p><script>const request=${payload};const T=${messages};const seal=${seal.toString()};const checkValue=${checkValue.toString()};const boxes=[...document.querySelectorAll('form textarea')];const submit=document.querySelector('form button');const result=document.getElementById('result');const cipher=document.getElementById('ciphertext');const retry=document.getElementById('retry');let currentUrl;const release=()=>{if(currentUrl)URL.revokeObjectURL(currentUrl);currentUrl=undefined};addEventListener('pagehide',e=>{if(!e.persisted)release()});document.getElementById('copy').addEventListener('click',async()=>{const note=document.getElementById('copy-status');try{await navigator.clipboard.writeText(cipher.value);note.textContent=T.copied}catch{cipher.focus();cipher.select();note.textContent=T.manual}});const expires=document.getElementById('expires');expires.textContent=new Date(request.expiresAt).toLocaleString();document.getElementById('show').addEventListener('change',e=>boxes.forEach(b=>b.classList.toggle('mask',!e.target.checked)));document.querySelector('form').addEventListener('submit',async e=>{e.preventDefault();if(submit.disabled)return;const status=document.querySelector('output');result.hidden=true;cipher.value='';release();document.getElementById('copy-status').textContent='';const read=b=>b.dataset.name?b.value.trim():b.value;for(const b of boxes){const problem=checkValue(request,b.dataset.name,read(b));if(problem){status.textContent=T[problem].replace('{name}',b.dataset.name||T.value);status.scrollIntoView({block:'center'});b.focus();return}}submit.disabled=true;try{const secret=request.fields?JSON.stringify(Object.fromEntries(boxes.map(b=>[b.dataset.name,read(b)]))):read(boxes[0]);const data=await seal(request,secret);cipher.value=JSON.stringify(data);result.hidden=false;boxes.forEach(b=>{b.value='';b.classList.add('mask')});document.getElementById('show').checked=false;status.textContent=T.done;try{currentUrl=URL.createObjectURL(new Blob([cipher.value],{type:'application/json'}));retry.href=currentUrl;retry.download=request.platform+'-'+request.environment+'-'+request.id.slice(0,8)+'-encrypted.json';retry.click()}catch{retry.removeAttribute('href');status.textContent=T.blocked}status.scrollIntoView({block:'center'});}catch{status.textContent=T.failed;status.scrollIntoView({block:'center'})}finally{submit.disabled=false}});</script></html>`;
 }
 async function json(path) {
 	const raw = await readFile(path, "utf8");
@@ -750,7 +759,12 @@ async function promptSecret(prompt) {
 		process.stderr.write(prompt);
 	});
 }
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href)
+function isMain() {
+    if (!process.argv[1]) return false;
+    try { return import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href; }
+    catch { return false; } // Imports from node stdin/eval have no executable path.
+}
+if (isMain())
 	main(process.argv.slice(2)).catch((e) => {
 		console.error(
 			e instanceof SafeError

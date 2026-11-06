@@ -61,3 +61,17 @@ POSIX 权限检查不能代替 Windows ACL；Windows 的 Node CLI 和单元边�
 - 真实交接：Stripe 测试 secret key、可公开密钥和 Resend key 写入被忽略的 env 文件，只读请求验证均返回 200。
 
 没有在 Windows 或 Firefox 上实测；Firefox 可能不支持 `-webkit-text-security`，那时输入框不遮挡，功能不受影响。
+
+## 2026-11-06: download recovery and installed-version repair
+
+The installed skill resolved to this checkout's old `main` (9830764). Fetching origin found the newer `feat/claude-default-and-v0.2` branch at b3dd6d7; this repair is based on that branch. No customer credentials or generated handoff files belong in this repository.
+
+Reviewed `SKILL.md`, `scripts/handoff.mjs`, `tests/browser.mjs`, `tests/guards.mjs`, `tests/handoff.test.mjs`, and the CI workflow. Corrected the misleading phrase “Encrypted file downloaded” to “A browser download was requested”: a page cannot confirm an actual filesystem save. Both the original version and v0.2 lacked an explicit page background and revoked the download object URL after one second.
+
+Changes: explicit readable background/input colors; ciphertext-only recovery with retry and copy/manual selection; preserve download URLs until replacement or page exit; clear stale results on a new attempt; disable concurrent submit; resolve the CLI entrypoint through its installed symlink while keeping stdin imports safe. The existing encryption protocol, original Apollo recipient key, and request identity are preserved.
+
+Local checks: 22 unit/integration tests; the original 7 browser scenarios; 7 new reliability scenarios in Chromium, installed Chrome, and WebKit. New cases cover Chinese/English, light/dark preference, desktop/mobile width, text contrast, actual saved-file decryption, delayed retry, silently blocked/throwing downloads, denied clipboard, and stale-result clearing. Two UI defects (unreadable text and broken denied-clipboard recovery) were deliberately injected into isolated copies; both were detected by behavioral assertions. All values used in tests were synthetic. Browser suites make no external HTTP requests.
+
+The actual Apollo page was regenerated using its original request and visually checked in the in-app browser through the loopback-only server. This verifies appearance and script startup in that client; a real customer-key handoff has not yet completed. Arbitrary extensions, forced page recoloring, and all other embedded clients are outside this verified matrix. Ciphertext recovery remains available when downloads are unsupported. Skill frontmatter validation also passed.
+
+Final safety mutation run: all 10 pre-existing guard mutations were detected, with the source unchanged. The complete npm browser command also passed (7 original + 7 reliability scenarios). No production APIs were called and no real emails were sent.

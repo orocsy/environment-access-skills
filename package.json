@@ -5,8 +5,9 @@
 	"type": "module",
 	"scripts": {
 		"test": "node --test tests/*.test.mjs",
-		"test:browser": "node tests/browser.mjs",
-		"test:guards": "node tests/guards.mjs"
+		"test:browser": "node tests/browser.mjs && node tests/browser-reliability.mjs",
+		"test:guards": "node tests/guards.mjs",
+		"test:browser:guards": "node tests/browser-guards.mjs"
 	},
 	"engines": {
 		"node": ">=22.13.0"

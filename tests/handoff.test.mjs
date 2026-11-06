@@ -173,3 +173,8 @@ test("CLI prepare, owner seal and receive write only expected public and private
 		await rm(root, { recursive: true, force: true });
 	}
 });
+
+ test("module can be imported from stdin without executing the CLI", () => {
+ const r=spawnSync(process.execPath,["--input-type=module","-"],{input:`import {ownerPage} from ${JSON.stringify(new URL("../skills/secure-key-handoff/scripts/handoff.mjs",import.meta.url).href)};console.log(typeof ownerPage);`,encoding:"utf8"});
+ assert.equal(r.status,0,r.stderr);assert.equal(r.stdout.trim(),"function");
+ });
