@@ -1,0 +1,4 @@
+interface:
+  display_name: "Stack setup"
+  short_description: "Check and record one app's whole provider stack from stack.yaml; list the owner's remaining steps"
+  default_prompt: "Use $stack-setup to run doctor and verify for this app, then tell me what is red and which steps are mine."

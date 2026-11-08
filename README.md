@@ -1,6 +1,13 @@
 # Environment Access Skills
 
-面向客户环境接入的可复用 skills。第一版只有 **secure-key-handoff（安全密钥交接）**：把“向老板要某平台 API Key”变成一条按平台配置的短步骤，并提供离线加密页、命令行备用和密码管理器选路。
+面向客户环境接入的可复用 skills。
+
+| Skill | 用途 |
+| --- | --- |
+| [secure-key-handoff](skills/secure-key-handoff/SKILL.md)（安全密钥交接） | 安全地向对方索取 API Key |
+| [stack-setup](skills/stack-setup/SKILL.md) | 按每个应用的 `stack.yaml` 检查、记录整套服务（DNS、服务器、网站、邮件、支付、登录、CI），并列出只能由负责人完成的步骤。目前只读（M1）；设计见 [DESIGN.md](docs/stack-setup/DESIGN.md)，与 Terraform 的对比见 [terraform-comparison.md](docs/stack-setup/terraform-comparison.md)。文档为英文。 |
+
+**secure-key-handoff**：把“向老板要某平台 API Key”变成一条按平台配置的短步骤，并提供离线加密页、命令行备用和密码管理器选路。
 
 ```text
 $secure-key-handoff 帮我向客户要 Resend 的 API Key，用于读信和改草稿，先做测试接入。
@@ -30,4 +37,4 @@ npm test
 
 测试涵盖加密往返、错请求/环境/私钥、篡改、过期、输出权限、拒绝 Git 目录与无秘密回显。浏览器、终端和标准工具的实测范围见 [验证记录](docs/VALIDATION.md)。此工具未经过独立密码学审计。
 
-这是公开的工具仓库，不接收真实密钥、生成的请求包或客户数据。首次使用新平台应查询官方文档；示例仅帮助选路。后续可在 `skills/` 下增加其他环境配置 skill，当前不占用账号登录、部署或付款流程。
+这是公开的工具仓库，不接收真实密钥、生成的请求包或客户数据。首次使用新平台应查询官方文档；示例仅帮助选路。stack-setup 的测试只用合成数据回放 CLI/API 输出，不调用真实服务。

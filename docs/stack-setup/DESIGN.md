@@ -156,8 +156,10 @@ stack doctor       check CLIs, versions, logins and deadlines
 
 Tests follow this repo's style: `node --test`. Adapters are tested against recorded CLI and API JSON with synthetic values, with no live calls in tests. Live checks only ever run `verify`.
 
-## Open questions for the owner
+## Owner decisions (7 Nov 2026)
 
-1. **Where the canonical secret store lives:** the server env file (today's setup), or a manager such as 1Password or Doppler. The server file is free and works today; a manager makes a second server easier.
-2. **The skill's language:** this repo is Chinese-first, and the owner works with me in English. Proposal: SKILL.md in English, with a Chinese summary in the README.
-3. **Where WiggleTrail's real `stack.yaml` lives:** proposal is `coachflow-backend` under `infra/stack/`, since its IDs don't belong in this public repo.
+1. **Canonical secret store: choosable per app.** `secrets.canonical.type` is `server-env` (a file on the API host, today's WiggleTrail setup) or `1password` (a vault item). Mirrors and checks work the same way for both.
+2. **Language: clear, easy English** that agents and people can both follow. The README keeps a short Chinese summary.
+3. **WiggleTrail's real `stack.yaml` lives in the backend repo**, under `infra/stack/`, because its IDs don't belong in this public repo.
+
+Terraform/OpenTofu was weighed against this design in [terraform-comparison.md](terraform-comparison.md). The verdict is hybrid: stack-setup orchestrates, and OpenTofu may later run inside some adapters.

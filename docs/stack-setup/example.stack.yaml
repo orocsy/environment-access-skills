@@ -1,5 +1,6 @@
 # Example stack file for one app. Synthetic names; no IDs or secrets.
 # Each app commits its own copy; .stack/state.json beside it records resource IDs only.
+# Check it with: node skills/stack-setup/scripts/stack.mjs doctor --stack docs/stack-setup/example.stack.yaml
 app: example-app
 domain: example.com
 environments: [production]
@@ -8,15 +9,24 @@ capabilities:
   dns:
     provider: cloudflare        # zone + records by API token
     registrar: godaddy          # nameserver change is a console gate
+    token_file: ~/.config/example-app/cloudflare.env
   api_host:
     provider: aws-ec2-docker    # alternatives: render, railway, fly
+    profile: example-app        # AWS CLI profile
     region: ap-southeast-2
     size: t3.micro
+    name: example-api           # the instance's Name tag
     ingress: cloudflare-tunnel  # no public ports
+    tunnel: example-api
     hostname: api               # → api.example.com
+    health: /health
+    ssh: { user: ec2-user, key: ~/.ssh/example-prod }
   web:
     provider: vercel
-    projects: [console, storefront]
+    scope: example-team
+    projects:
+      - { name: example-console }
+      - { name: example-storefront, domains: [example.com, www.example.com] }
   database:
     provider: docker-postgres   # alternatives: neon, supabase
     on: api_host
@@ -25,6 +35,7 @@ capabilities:
     on: api_host
   email:
     provider: resend
+    profile: example-app        # resend CLI profile
     subdomain: mail             # → mail.example.com
     region: ap-northeast-1
     sender: no-reply
@@ -32,13 +43,18 @@ capabilities:
     provider: stripe
     mode: sandbox               # live keys are a go-live gate
     connect: oauth
-    webhooks: [connect, billing]
+    connect_redirect: /payments/connect/callback
+    webhooks: { connect: /webhooks/stripe/connect, billing: /webhooks/stripe/billing }
   signin:
     provider: google-oauth      # alternative: clerk (shared dev credentials)
-    surfaces: [api, console]
+    project: example-app-prod
+    probe: /auth/google/authorize
+    redirects: [/auth/google/callback]
   ci:
     provider: github
     repo: owner/example-app
+    deploy_workflow: deploy.yml
+    required_secrets: [DEPLOY_HOST, DEPLOY_SSH_KEY]
 
 # Env names the app reads; each capability promises its own.
 contract:
@@ -48,9 +64,21 @@ contract:
   api_host: [API_PUBLIC_URL]
 
 secrets:
+  # Choosable: server-env (a file on the host) or 1password (a vault item).
   canonical: { type: server-env, host: api_host, path: ~/example-app/app.env }
   mirrors:
     - { type: github-secret, repo: owner/example-app, name: APP_ENV }
-  config:                      # not secret; Vercel "Config" type
-    - { target: vercel, projects: [console, storefront], name: API_URL, from: api_host.url }
-    - { target: vercel, projects: [console, storefront], name: NEXT_PUBLIC_API_URL, from: api_host.url }
+  config:                      # not secret; compared by exact value
+    - { target: server-env, name: API_PUBLIC_URL, value: "https://api.example.com" }
+    - { target: vercel, projects: [example-console, example-storefront], name: API_URL }
+    - { target: vercel, projects: [example-console, example-storefront], name: NEXT_PUBLIC_API_URL }
+
+# Human steps only this app has. Provider steps come from the adapters.
+gates:
+  - id: ios.signin
+    bundle: go-live
+    type: console
+    title: Turn on native sign-in for the iOS app
+
+deadlines:
+  - { date: "2027-05-04", what: AWS free-plan credit ends; upgrade the account first }
