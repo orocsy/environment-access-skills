@@ -56,7 +56,8 @@ export function validateStack(raw, adapters = {}) {
 				need(isMap(caps[canonical.host]), "secrets.canonical.host: the capability that runs the server");
 				need(/^[~A-Za-z0-9_./-]+$/.test(canonical.path ?? ""), "secrets.canonical.path: a plain file path on the host");
 			} else if (canonical.type === "local-env") {
-				need(/^[~A-Za-z0-9_./-]+$/.test(canonical.path ?? ""), "secrets.canonical.path: a plain file path on this machine");
+				// Never passed to a shell, so Windows paths (C:\…) are fine here.
+				need(/^[~A-Za-z0-9_./\\: -]+$/.test(canonical.path ?? ""), "secrets.canonical.path: a plain file path on this machine");
 			} else {
 				need(typeof canonical.vault === "string" && canonical.vault, "secrets.canonical.vault is required for 1password");
 				need(typeof canonical.item === "string" && canonical.item, "secrets.canonical.item is required for 1password");

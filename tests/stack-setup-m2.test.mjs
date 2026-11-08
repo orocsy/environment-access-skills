@@ -249,7 +249,7 @@ test("local-env store: written 0600, and refused inside a Git checkout unless ig
 	const written = files.get(envPath).split("\n").filter(Boolean).sort();
 	assert.equal(written.length, 3);
 	assert.match(written.join("\n"), /^API_PUBLIC_URL=https:\/\/api\.example\.com\nEMAIL_FROM=Example <no-reply@news\.example\.com>\nRESEND_API_KEY=re_SYNTHkey\d+_SYNTHETICvalue\d+$/);
-	assert.equal((await stat(envPath)).mode & 0o777, 0o600);
+	if (process.platform !== "win32") assert.equal((await stat(envPath)).mode & 0o777, 0o600, "POSIX permissions; Windows has none to check");
 
 	const repo = await mkdtemp(join(tmpdir(), "stack-repo-"));
 	spawnSync("git", ["init", "-q", repo]);
