@@ -212,7 +212,7 @@ test("verify: without the Stripe CLI, routes are still checked and the login gat
 test("verify: a provider without an adapter is skipped, not failed", async () => {
 	const dir = await workspace();
 	const file = join(dir, "infra/stack/stack.yaml");
-	await writeFile(file, (await readFile(file, "utf8")).replace("provider: docker-postgres   # alternatives: neon, supabase\n    on: api_host", "provider: neon"));
+	await writeFile(file, (await readFile(file, "utf8")).replace(/provider: docker-postgres[^\r\n]*\r?\n\s+on: api_host/, "provider: neon"));
 	const { out } = await run(dir, ["verify"]);
 	assert.match(out, /`database` \| — skipped \| no adapter for provider "neon" yet/);
 });
