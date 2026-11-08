@@ -226,7 +226,7 @@ test("import: records IDs in state and keeps the first-seen time", async () => {
 	assert.equal(state.resources["cloudflare.tunnel.example-api"].id, "tunnel-synthetic");
 	assert.equal(state.resources["aws.instance.example-api"].id, "i-0synthetic");
 	assert.equal(state.resources["aws.address.example-api"].ip, "203.0.113.10");
-	assert.equal(state.resources["resend.domain"].id, "dom-synthetic");
+	assert.equal(state.resources["resend.domain.mail.example.com"].id, "dom-synthetic");
 	assert.equal(state.resources["stripe.webhook.connect"].id, "we_connect");
 	assert.equal(state.resources["vercel.project.example-console"].id, "prj_example-console");
 	const seen = state.resources["cloudflare.zone"].firstSeen;
@@ -268,9 +268,9 @@ test("doctor: tools, logins and deadlines, without writing state", async () => {
 
 test("cli: later commands say when they arrive; bad stacks name the problem", async () => {
 	const dir = await workspace();
-	const later = await run(dir, ["apply"]);
+	const later = await run(dir, ["rotate"]);
 	assert.equal(later.code, 64);
-	assert.match(later.out, /arrives in M2/);
+	assert.match(later.out, /arrives in M3/);
 	await writeFile(join(dir, "infra/stack/stack.yaml"), "app: x\ndomain: x.com\ncapabilities: {}\n");
 	await assert.rejects(run(dir, ["verify"]), /capabilities: at least one/);
 });

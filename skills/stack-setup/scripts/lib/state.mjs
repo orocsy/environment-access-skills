@@ -4,7 +4,7 @@ import { assertNoSecrets } from "./guard.mjs";
 
 // .stack/state.json holds IDs, gate status and last checks. Never secret values.
 export function emptyState(app) {
-	return { version: 1, app, resources: {}, gates: {}, checks: {} };
+	return { version: 1, app, resources: {}, gates: {}, checks: {}, created: 0 };
 }
 
 export async function loadState(path, app) {
@@ -53,4 +53,11 @@ export function recordResource(state, key, fields, now) {
 		firstSeen: before?.firstSeen ?? now,
 		lastSeen: now,
 	};
+}
+
+// Something stack-setup made. Only these can be removed by `stack teardown`;
+// resources found by import or made by hand are never deleted.
+export function recordCreated(ctx, key, provider, fields) {
+	ctx.state.created = (ctx.state.created ?? 0) + 1;
+	recordResource(ctx.state, key, { ...fields, provider, createdBy: "stack-setup", order: ctx.state.created }, ctx.now().toISOString());
 }

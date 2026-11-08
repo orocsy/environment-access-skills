@@ -151,6 +151,7 @@ stack doctor       check CLIs, versions, logins and deadlines
    - Write adapters that only probe: Cloudflare, AWS, Vercel, GitHub, Resend, Stripe, Google.
    - Done when WiggleTrail's real `stack.yaml` and `state.json` show every item green, plus the two open gates (Google publish, iOS sign-in config).
 2. **M2: provision, mint and sync** for Cloudflare DNS, Resend, GitHub, Vercel and the server env. Done when the WiggleTrail email domain could be rebuilt from scratch in a throwaway subdomain, then removed.
+   - Done 9 Nov 2026: `stackproof.wiggletrail.com` was built live (domain, 4 DNS records, verification, send-only key, local store, GitHub mirror), sent a delivered email, then torn down with the key revoked. WiggleTrail's own `plan` showed nothing to change.
 3. **M3: Stripe and Google.** Stripe webhooks, Connect checks and restricted-key gates; the Google gate with prefill and secret pickup; AWS host bootstrap reusing `infra/ec2-bootstrap.sh`.
 4. **M4: a second, different app (KidsBuddy)** with at least two different providers, to prove the "never identical" goal.
 

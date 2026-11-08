@@ -72,3 +72,78 @@ export function doctorMarkdown(stack, { checks, deadlines }, at) {
 	assertNoSecrets(text, "report");
 	return text;
 }
+
+const KIND = { create: "+ create", update: "~ update", sync: "→ sync", wait: "⏳ wait", noop: "= no change", blocked: "⏸ blocked" };
+
+const guarded = (text) => {
+	assertNoSecrets(text, "report");
+	return text;
+};
+
+export function planMarkdown(stack, steps, { confirmHint = false } = {}) {
+	const changes = steps.filter((s) => !["noop", "blocked"].includes(s.kind));
+	return guarded(
+		[
+			`## stack plan: ${stack.app}`,
+			"",
+			changes.length ? `${changes.length} change${changes.length === 1 ? "" : "s"}; nothing has been changed yet.` : "Nothing to change.",
+			"",
+			...steps.map((s) => `- ${KIND[s.kind]} \`${s.id}\`: ${s.summary}${s.gate ? ` (gate \`${s.gate}\`)` : ""}`),
+			"",
+			...(confirmHint ? ["Run again with --confirm to make these changes.", ""] : []),
+		].join("\n"),
+	);
+}
+
+export function applyMarkdown(stack, { done, waiting, failed }, at) {
+	return guarded(
+		[
+			`## stack apply: ${stack.app}`,
+			"",
+			`${at}. ${done.length} done${waiting ? ", 1 waiting" : ""}${failed ? ", 1 failed" : ""}.`,
+			"",
+			...done.map((s) => `- ✅ \`${s.id}\`: ${s.summary}`),
+			...(waiting ? [`- ⏳ \`${waiting.id}\`: ${waiting.note}`] : []),
+			...(failed ? [`- ❌ \`${failed.id}\`: ${failed.summary}. ${failed.error}`, "", "Later steps did not run. Fix the cause, then run apply again."] : []),
+			"",
+		].join("\n"),
+	);
+}
+
+export function connectMarkdown(stack, checks, gates) {
+	return guarded(
+		[
+			`## stack connect: ${stack.app}`,
+			"",
+			...checks.map((c) => `- ${MARK[c.status]} \`${c.id}\`: ${c.detail}`),
+			"",
+			gatesMarkdown(gates),
+		].join("\n"),
+	);
+}
+
+export function teardownMarkdown(stack, list) {
+	return guarded(
+		[
+			`## stack teardown: ${stack.app}`,
+			"",
+			list.length ? `Would remove ${list.length} thing${list.length === 1 ? "" : "s"} stack-setup created, newest first. Nothing found by import is touched.` : "stack-setup created nothing here, so there is nothing to remove.",
+			"",
+			...list.map(([key, r]) => `- \`${key}\`${r.name ? `: ${r.name}` : r.key ? `: ${r.key}` : ""}`),
+			"",
+			...(list.length ? ["Run again with --confirm to remove them. This can't be undone.", ""] : []),
+		].join("\n"),
+	);
+}
+
+export function teardownResultMarkdown(stack, { removed, failed }) {
+	return guarded(
+		[
+			`## stack teardown: ${stack.app}`,
+			"",
+			...removed.map((r) => `- 🗑 ${r}`),
+			...(failed ? [`- ❌ \`${failed.key}\`: ${failed.error}`] : []),
+			"",
+		].join("\n"),
+	);
+}

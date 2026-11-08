@@ -39,6 +39,7 @@ capabilities:
     subdomain: mail             # → mail.example.com
     region: ap-northeast-1
     sender: no-reply
+    from_name: Example          # EMAIL_FROM = Example <no-reply@mail.example.com>
   payments:
     provider: stripe
     mode: sandbox               # live keys are a go-live gate
@@ -70,8 +71,8 @@ secrets:
     - { type: github-secret, repo: owner/example-app, name: APP_ENV }
   config:                      # not secret; compared by exact value
     - { target: server-env, name: API_PUBLIC_URL, value: "https://api.example.com" }
-    - { target: vercel, projects: [example-console, example-storefront], name: API_URL }
-    - { target: vercel, projects: [example-console, example-storefront], name: NEXT_PUBLIC_API_URL }
+    - { target: vercel, projects: [example-console, example-storefront], name: API_URL, from: api_host.url }
+    - { target: vercel, projects: [example-console, example-storefront], name: NEXT_PUBLIC_API_URL, from: api_host.url }
 
 # Human steps only this app has. Provider steps come from the adapters.
 gates:
