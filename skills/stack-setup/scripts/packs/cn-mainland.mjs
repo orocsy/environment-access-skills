@@ -175,7 +175,7 @@ export function gates(stack) {
 	const p = stack.profile ?? {};
 	const app = has(p, "ios-app") || has(p, "android-app");
 	const site = has(p, "website") || has(p, "api");
-	const filing = ["cn.account.realname", "cn.domain.realname", "cn.filing.prepare", ...(app ? ["cn.app.prepare"] : [])];
+	const filing = ["cn.account.realname", "tencent.login", "cn.domain.realname", "cn.filing.prepare", ...(app ? ["cn.app.prepare"] : [])];
 	const list = [
 		{
 			id: "cn.account.realname",
@@ -190,6 +190,20 @@ export function gates(stack) {
 			takes: "minutes for a person; up to 1–3 working days for a business",
 			faq: [{ q: "Can I change from person to business later?", a: "Yes, by upgrading the verification; filings made as a person stay in the person's name until changed." }],
 			sources: [TENCENT_FIRST],
+		},
+		{
+			// Same id as the Tencent adapters' login step, so it merges with theirs and sits here in the route.
+			id: "tencent.login",
+			track: "account",
+			bundle: "preflight",
+			type: "consent",
+			who: "you",
+			title: "Sign in to Tencent Cloud's CLI once",
+			where: "your terminal (the agent opens it for you)",
+			after: ["cn.account.realname"],
+			steps: ["The agent runs tccli auth login; a browser page opens", "Approve it; the agent checks the sign-in and does the rest"],
+			takes: "a minute",
+			closedBy: "tencent.login",
 		},
 		p.domain === "transfer"
 			? {

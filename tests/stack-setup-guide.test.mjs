@@ -51,6 +51,13 @@ async function run(dir, argv, { now = "2026-11-10T00:00:00Z", world = healthyWor
 }
 
 const readState = async (dir) => JSON.parse(await readFile(join(dir, "infra/stack/.stack/state.json"), "utf8"));
+// What stack verify records when a probe-backed step's check turns green.
+const probeDone = async (dir, id) => {
+	const path = join(dir, "infra/stack/.stack/state.json");
+	const state = JSON.parse(await readFile(path, "utf8"));
+	state.gates[id] = { status: "done", at: "2026-11-10T00:00:00Z", by: `probe ${id}` };
+	await writeFile(path, JSON.stringify(state));
+};
 const markDone = async (dir, ids, now) => {
 	for (const id of ids) {
 		const r = await run(dir, ["guide", "done", id], { now });
@@ -92,11 +99,14 @@ test("guide: one screen for the next owner step, with where, steps, documents an
 test("guide: the server is bought only when everything else for the filing is ready", async () => {
 	const dir = await workspace();
 	const all = await run(dir, ["guide", "all"]);
-	assert.match(all.out, /· Buy the mainland server the filing is attached to — you approve; the agent buys, minutes 💲 \(bought only when everything else is ready\) · after cn\.account\.realname, cn\.domain\.realname, cn\.filing\.prepare, cn\.app\.prepare/);
+	assert.match(all.out, /· Buy the mainland server the filing is attached to — you approve; the agent buys, minutes 💲 \(bought only when everything else is ready\) · after cn\.account\.realname, tencent\.login, cn\.domain\.realname, cn\.filing\.prepare, cn\.app\.prepare/);
 	await markDone(dir, ["cn.account.realname", "cn.domain.register", "cn.domain.realname", "cn.filing.prepare", "apple.developer"]);
 	const notYet = await run(dir, ["guide", "all"]);
-	assert.match(notYet.out, /· Buy the mainland server .* · after cn\.app\.prepare/, "one filing input still missing: not bought yet");
+	assert.match(notYet.out, /· Buy the mainland server .* · after tencent\.login, cn\.app\.prepare/, "one filing input still missing: not bought yet");
 	await markDone(dir, ["cn.app.prepare"]);
+	const stillWaiting = await run(dir, ["guide", "all"]);
+	assert.match(stillWaiting.out, /· Buy the mainland server .* · after tencent\.login/, "the agent buys it through the Tencent CLI, so the sign-in comes first");
+	await probeDone(dir, "tencent.login");
 	const now = await run(dir, ["guide"]);
 	assert.match(now.out, /Buy the mainland server the filing is attached to {2}💲 Tencent's monthly price for the chosen size, shown before you agree/);
 	assert.match(now.out, /1\. Only now, because a filing can't be submitted without it/);
@@ -104,7 +114,9 @@ test("guide: the server is bought only when everything else for the filing is re
 
 test("guide: the 24-hour SMS clock starts when the face check is done, and shows overdue", async () => {
 	const dir = await workspace();
-	await markDone(dir, ["cn.account.realname", "cn.domain.register", "cn.domain.realname", "cn.filing.prepare", "apple.developer", "cn.app.prepare", "cn.host.purchase", "cn.filing.submit"]);
+	await markDone(dir, ["cn.account.realname", "cn.domain.register", "cn.domain.realname", "cn.filing.prepare", "apple.developer", "cn.app.prepare"]);
+	await probeDone(dir, "tencent.login");
+	await markDone(dir, ["cn.host.purchase", "cn.filing.submit"]);
 	await markDone(dir, ["cn.filing.face"], "2026-11-12T08:00:00Z");
 	const soon = await run(dir, ["guide"], { now: "2026-11-12T09:00:00Z" });
 	assert.match(soon.out, /Answer the MIIT text message within 24 hours/);

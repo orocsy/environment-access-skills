@@ -150,6 +150,8 @@ A full example is [`docs/stack-setup/example.stack.yaml`](../../docs/stack-setup
 | `resend` | email | domain verified, region, DNS records, a key exists |
 | `stripe` | payments | webhook routes refuse unsigned calls; endpoints enabled (needs the Stripe CLI) |
 | `google-oauth` | sign-in | the API redirects to Google with the expected client |
+| `dnspod` | DNS (China) | the domain is in DNSPod with its nameservers delegated; each server's A record matches it |
+| `tencent-lighthouse` | API host (China) | running; prepaid and not near expiry (a filing needs it); open ports; `/health` |
 
 A provider with no adapter yet is reported as skipped, not failed. To add one, write `scripts/adapters/<provider>.mjs` with `validate`, `gates`, `doctor`, `import` and `verify`. Register it in `adapters/index.mjs` and test it against recorded JSON in `tests/`.
 
