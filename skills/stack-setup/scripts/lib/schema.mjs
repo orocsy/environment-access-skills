@@ -3,9 +3,9 @@ import { assertNoSecrets } from "./guard.mjs";
 const SLUG = /^[a-z0-9][a-z0-9-]{0,62}$/;
 const HOST = /^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
 const ENV_NAME = /^[A-Z][A-Z0-9_]*$/;
-const STORES = ["server-env", "1password"];
+const STORES = ["server-env", "local-env", "1password"];
 const MIRRORS = ["github-secret"];
-const CONFIG_TARGETS = ["server-env", "vercel"];
+const CONFIG_TARGETS = ["server-env", "local-env", "vercel"];
 export const GATE_TYPES = ["consent", "terms", "money", "console", "identity", "time"];
 export const GATE_BUNDLES = ["preflight", "app", "go-live"];
 
@@ -55,6 +55,9 @@ export function validateStack(raw, adapters = {}) {
 			if (canonical.type === "server-env") {
 				need(isMap(caps[canonical.host]), "secrets.canonical.host: the capability that runs the server");
 				need(/^[~A-Za-z0-9_./-]+$/.test(canonical.path ?? ""), "secrets.canonical.path: a plain file path on the host");
+			} else if (canonical.type === "local-env") {
+				// Never passed to a shell, so Windows paths (C:\…) are fine here.
+				need(/^[~A-Za-z0-9_./\\: -]+$/.test(canonical.path ?? ""), "secrets.canonical.path: a plain file path on this machine");
 			} else {
 				need(typeof canonical.vault === "string" && canonical.vault, "secrets.canonical.vault is required for 1password");
 				need(typeof canonical.item === "string" && canonical.item, "secrets.canonical.item is required for 1password");
@@ -69,6 +72,8 @@ export function validateStack(raw, adapters = {}) {
 			need(isMap(c) && CONFIG_TARGETS.includes(c.target), `${at}.target: one of ${CONFIG_TARGETS.join(", ")}`);
 			need(ENV_NAME.test(c?.name ?? ""), `${at}.name: an upper-case env name`);
 			need(c?.value === undefined || typeof c.value === "string", `${at}.value: text`);
+			need(c?.from === undefined || /^[a-z][a-z0-9_]*\.url$/.test(c.from), `${at}.from: <capability>.url`);
+			if (typeof c?.from === "string") need(raw.capabilities?.[c.from.split(".")[0]]?.hostname, `${at}.from: ${c.from.split(".")[0]} has no hostname`);
 		});
 	}
 	(raw.gates ?? []).forEach((g, i) => {

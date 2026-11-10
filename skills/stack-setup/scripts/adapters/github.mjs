@@ -1,10 +1,22 @@
 import { GREEN, RED } from "../lib/context.mjs";
+import { recordCreated } from "../lib/state.mjs";
 
 const LOGIN_GATE = "github.login";
 const gh = (ctx, path) => ctx.json("gh", ["api", path], { gate: LOGIN_GATE });
 
+// The value goes in on stdin, never as an argument.
+export async function setSecret(ctx, repo, name, value) {
+	const { secrets = [] } = await gh(ctx, `repos/${repo}/actions/secrets?per_page=100`);
+	await ctx.call("gh", ["secret", "set", name, "--repo", repo], { input: value });
+	if (!secrets.some((s) => s.name === name)) recordCreated(ctx, `github.secret.${repo}.${name}`, "github", { repo, name });
+}
+
 export default {
 	provider: "github",
+	async remove(ctx, key, resource) {
+		await ctx.call("gh", ["secret", "delete", resource.name, "--repo", resource.repo]);
+		return `GitHub secret ${resource.name} in ${resource.repo}`;
+	},
 	tools: [{ cmd: "gh", args: ["--version"] }],
 	validate(cap) {
 		const errors = [];

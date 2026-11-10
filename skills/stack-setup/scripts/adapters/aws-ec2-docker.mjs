@@ -25,7 +25,7 @@ async function instance(ctx, cap) {
 
 // Runs one fixed command on the host. Callers pass only literal text or
 // names already checked by the schema, never secret values.
-export async function hostShell(ctx, capName, remote) {
+export async function hostShell(ctx, capName, remote, { input } = {}) {
 	const cap = ctx.stack.capabilities[capName];
 	// The recorded or declared address keeps SSH checks working while the AWS login has lapsed.
 	const host =
@@ -44,7 +44,7 @@ export async function hostShell(ctx, capName, remote) {
 		"StrictHostKeyChecking=accept-new",
 		`${cap.ssh.user}@${host}`,
 		remote,
-	]);
+	], { input });
 	if (result.missing) throw new Blocked("ssh is not installed");
 	if (result.code === 255) throw new Blocked(`ssh to ${capName} failed: ${firstLine(result.stderr)}`);
 	return result;

@@ -9,28 +9,41 @@ import { validateStack } from "./lib/schema.mjs";
 import { loadState, saveState } from "./lib/state.mjs";
 import { makeContext } from "./lib/context.mjs";
 import { allGates, doctor, importResources, verify, worst } from "./lib/runner.mjs";
-import { setGate } from "./lib/gates.mjs";
-import { doctorMarkdown, gatesMarkdown, verifyMarkdown } from "./lib/report.mjs";
+import { closeByChecks, setGate } from "./lib/gates.mjs";
+import { applyMarkdown, connectMarkdown, doctorMarkdown, gatesMarkdown, planMarkdown, teardownMarkdown, teardownResultMarkdown, verifyMarkdown } from "./lib/report.mjs";
+import { CHANGES, apply, plan, teardown, teardownList } from "./lib/apply.mjs";
+
+const strip = ({ run, ...step }) => step;
 import { adapters as builtIn } from "./adapters/index.mjs";
 
 const USAGE = `stack <command> [--stack path/to/stack.yaml]
 
-Read-only commands:
-  verify    check every capability and secret store; green/red per item
-  import    find resources that already exist and record their IDs in state
-  gates     list the human steps still open (--all for every one)
+Read only:
+  doctor     check tools, logins and deadlines
+  connect    the sign-ins to do before any work, and which are done
+  verify     check every capability and secret store; green/red per item
+  import     find resources that already exist and record their IDs in state
+  gates      list the human steps still open (--all for every one)
+  plan       show what apply would create, change or leave alone
+
+Changes (each shows its plan and does nothing without --confirm):
+  apply      create what's missing, mint keys, write the secret store and mirrors
+  sync       copy the secret store to every mirror and correct config values
+  teardown   remove everything stack-setup created (never what it imported)
   gates set <id> <open|waiting|done|skipped> [--by name] [--note text]
-  doctor    check tools, logins and deadlines
 
 Options:
   --stack <file>    default: ./infra/stack/stack.yaml, then ./stack.yaml
+  --confirm         actually make the changes the plan shows
+  --wait <minutes>  how long apply waits for DNS verification (default 10)
   --report <file>   also write the Markdown report to this file
   --json            print JSON instead of Markdown
   --no-save         don't update .stack/state.json
 
-Coming in later milestones: plan, apply, connect, sync, rotate.`;
+Coming in M3: rotate.`;
 
-const LATER = { plan: "M2", apply: "M2", connect: "M2", sync: "M2", rotate: "M3" };
+const LATER = { rotate: "M3" };
+const COMMANDS = ["verify", "import", "gates", "doctor", "connect", "plan", "apply", "sync", "teardown"];
 
 export async function loadStack(path, adapters = builtIn) {
 	const { stack, errors } = validateStack(parseYaml(await readFile(path, "utf8")), adapters);
@@ -50,6 +63,8 @@ export async function main(argv, { adapters = builtIn, out = process.stdout, cwd
 			all: { type: "boolean" },
 			by: { type: "string" },
 			note: { type: "string" },
+			confirm: { type: "boolean" },
+			wait: { type: "string" },
 			help: { type: "boolean", short: "h" },
 		},
 	});
@@ -59,13 +74,15 @@ export async function main(argv, { adapters = builtIn, out = process.stdout, cwd
 		return command || values.help ? 0 : 64;
 	}
 	if (LATER[command]) {
-		out.write(`stack ${command} arrives in ${LATER[command]}. Today stack-setup only reads: verify, import, gates, doctor.\n`);
+		out.write(`stack ${command} arrives in ${LATER[command]}.\n`);
 		return 64;
 	}
-	if (!["verify", "import", "gates", "doctor"].includes(command)) {
+	if (!COMMANDS.includes(command)) {
 		out.write(`Unknown command "${command}".\n\n${USAGE}\n`);
 		return 64;
 	}
+	if (values.confirm && values["no-save"])
+		throw new Error("--no-save can't be used with --confirm: state must record what was changed");
 	const stackPath =
 		values.stack ? resolve(cwd, values.stack) : [join(cwd, "infra/stack/stack.yaml"), join(cwd, "stack.yaml")].find(existsSync);
 	if (!stackPath) throw new Error("No stack.yaml found; pass --stack <file>");
@@ -104,12 +121,44 @@ export async function main(argv, { adapters = builtIn, out = process.stdout, cwd
 			setGate(gates, state, id, status, { by: values.by, note: values.note, now: at });
 			out.write(`${id} → ${status}\n`);
 		} else print(gates, gatesMarkdown(gates, { all: values.all }));
-	} else {
+	} else if (command === "doctor") {
 		const result = await doctor(ctx, adapters);
 		print(result, doctorMarkdown(stack, result, at));
 		code = worst(result.checks) === "green" ? 0 : 2;
+	} else if (command === "connect") {
+		const result = await doctor(ctx, adapters);
+		const preflight = allGates(ctx, adapters).filter((g) => g.bundle === "preflight");
+		closeByChecks(preflight, structuredClone(state), result.checks, at);
+		const logins = result.checks.filter((c) => c.capability !== "tools" || c.status !== "green");
+		print({ checks: logins, gates: preflight }, connectMarkdown(stack, logins, preflight));
+		code = worst(logins) === "green" ? 0 : 2;
+	} else if (command === "teardown") {
+		const list = teardownList(state);
+		if (!values.confirm) {
+			print(list, teardownMarkdown(stack, list));
+			return list.length ? 10 : 0;
+		}
+		const result = await teardown(ctx, adapters);
+		print(result, teardownResultMarkdown(stack, result));
+		code = result.failed ? 1 : 0;
+	} else {
+		const waitMinutes = values.wait === undefined ? 10 : Number(values.wait);
+		if (!Number.isFinite(waitMinutes) || waitMinutes < 0) throw new Error("--wait takes a number of minutes");
+		const steps = await plan(ctx, adapters, { mirrors: command === "sync", waitMinutes });
+		const shown = command === "sync" ? steps.filter((s) => s.capability === "secrets" || s.id.includes(".env.")) : steps;
+		const pending = shown.filter((s) => CHANGES.includes(s.kind));
+		if (command === "plan" || !values.confirm || !pending.length) {
+			print(shown.map(({ run, ...s }) => s), planMarkdown(stack, shown, { confirmHint: command !== "plan" && pending.length > 0 }));
+			if (command === "plan") return pending.length ? 10 : shown.some((s) => s.kind === "blocked") ? 2 : 0;
+			return pending.length ? 10 : 0;
+		}
+		const result = await apply(ctx, shown);
+		const markdown = applyMarkdown(stack, result, at);
+		print({ done: result.done.map(({ run, ...s }) => s), waiting: result.waiting && strip(result.waiting), failed: result.failed && strip(result.failed) }, markdown);
+		if (values.report) await writeFile(resolve(cwd, values.report), markdown);
+		code = result.failed ? 1 : result.waiting ? 3 : 0;
 	}
-	if (!values["no-save"] && command !== "doctor" && !(command === "gates" && rest[0] !== "set"))
+	if (!values["no-save"] && !["doctor", "connect", "plan"].includes(command) && !(command === "gates" && rest[0] !== "set") && !(["apply", "sync", "teardown"].includes(command) && !values.confirm))
 		await saveState(statePath, state);
 	return code;
 }
