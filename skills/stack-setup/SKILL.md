@@ -26,6 +26,8 @@ node $S import     # find what already exists, record IDs
 node $S verify     # green/red for every item
 node $S gates      # human steps still open
 node $S plan       # what apply would do
+node $S guide      # the owner's next step only, everything on one screen
+node $S guide all  # the whole route: tracks, waits, deadlines, what costs money
 
 node $S apply --confirm      # create what's missing, mint keys, write the store and mirrors
 node $S sync --confirm       # re-copy the store to its mirrors, correct config values
@@ -83,6 +85,45 @@ It can't create users, change policies, touch untagged resources (such as a serv
 - **Never overwrite:** a DNS record that already points somewhere else is a conflict for a person to resolve. A key whose value is already in the store is left alone; replacing it is `rotate`.
 - **Nothing is minted unless its store can be written.** If the store can't be read, the key step is skipped.
 - **Money:** a step that costs money shows its price in the plan (💲), and `apply` refuses the whole run without `--accept-cost`. Nothing is half-built.
+
+## Guiding the owner
+
+When a person has steps to do, show them `stack guide` output, not a list of everything. Each step says:
+- who does it, and where;
+- the numbered actions, in the console's own words;
+- values to paste, and documents to have ready;
+- how long it takes, and any deadline;
+- common questions, and the sources it's based on (with the date each was checked).
+
+The rules:
+- **When they finish a step:** `stack guide done <id>`. Steps with a check close themselves on `verify`.
+- **When something goes wrong:** `stack guide stuck "<what happened>"`. Read the note and answer it.
+- **Money comes last.** A paid step marked just-in-time (such as China's filing server) isn't offered until everything else its dependents need is done.
+- **Advice:** steps marked ⚖ need a lawyer or adviser. Say so, and give the question to ask; never answer it as fact.
+- **Stale sources:** if a step's sources were checked more than 90 days ago, re-read them before relying on the step.
+
+## Places with their own rules (jurisdiction packs)
+
+`jurisdiction: cn-mainland` in a stack file loads the China pack. It adds:
+- **Up-front questions** (`stack guide ask`), answered once under `profile:`.
+- **Warnings** for providers that don't serve mainland users: Google sign-in, Stripe, Vercel, Cloudflare, Resend, AWS.
+- **The guided route:**
+  - real-name checks;
+  - the domain, and the filing server, bought just in time;
+  - ICP filing with its 24-hour SMS;
+  - app filing;
+  - going live;
+  - the police filing within 30 days;
+  - SMS approval;
+  - a privacy policy.
+
+  Payments and data export show only when the answers need them.
+
+Business registration isn't covered. Design: [`docs/stack-setup/china-mainland.md`](../../docs/stack-setup/china-mainland.md).
+
+## Skills and tools a stack needs
+
+`doctor` lists the agent skills and plugins that help with a stack's providers (for example CloudBase's toolkit for `tencent-cloudbase`, Cloudflare's for `cloudflare`), and whether each is installed. It also checks each pack's CLIs (`tccli` for China). Installing any of them is a download: ask first, and install in the app's own project, not globally, when it gives an agent account access.
 
 ## Use it in another project
 
