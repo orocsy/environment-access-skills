@@ -219,7 +219,7 @@ test("pickup: names exactly what's missing from a hand-off file", () => {
 	assert.throws(() => parseHandoff('{"web":{"client_id":"x"}}', ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"]), /doesn't have GOOGLE_CLIENT_SECRET/);
 });
 
-const withBootstrap = (t) => t.replace("    health: /health\n", "    health: /health\n    bootstrap: infra/bootstrap.sh\n");
+const withBootstrap = (t) => t.replace(/ {4}health: \/health(\r?\n)/, "    health: /health$1    bootstrap: infra/bootstrap.sh$1");
 const SCRIPT = "#!/usr/bin/env bash\nset -euo pipefail\necho \"connector ${TUNNEL_TOKEN:+set}\"\n";
 
 test("host: a new server is planned with its cost, refused without --accept-cost, then built and torn down", async () => {
