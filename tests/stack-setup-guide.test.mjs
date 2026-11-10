@@ -184,3 +184,12 @@ test("route: the owner's ready step comes before the agent's own work", () => {
 	assert.equal(route(gates, { gates: {} }).next.id, "owner-work");
 	assert.equal(route([gates[0]], { gates: {} }).next.id, "agent-work", "agent work shows when nothing else is ready");
 });
+
+test("route: steps read in dependency order, and a loop is reported", () => {
+	const gates = [
+		{ id: "z-last", title: "Z", after: ["a-first"], status: "open", seq: 0 },
+		{ id: "a-first", title: "A", status: "open", seq: 1 },
+	];
+	assert.deepEqual(route(gates, { gates: {} }).steps.map((s) => s.id), ["a-first", "z-last"]);
+	assert.throws(() => route([{ id: "x", after: ["y"] }, { id: "y", after: ["x"] }], { gates: {} }), /in a loop: x, y/);
+});

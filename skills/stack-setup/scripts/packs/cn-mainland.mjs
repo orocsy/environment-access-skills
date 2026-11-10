@@ -172,6 +172,7 @@ export function gates(stack) {
 					title: "Enrol in the Apple Developer Program (as an individual is fine)",
 					where: "https://developer.apple.com/programs/enroll/",
 					steps: ["Sign in with your Apple Account → Enroll → Individual", "Pay the yearly fee", "Then the agent creates the bundle ID and distribution certificate"],
+					note: "Needed for TestFlight and for the app filing's certificate details. It can wait until just before the app details are prepared; approval usually takes up to 48 hours.",
 					takes: "usually within 48 hours",
 					cost: "the yearly fee shown by Apple (about US$99 / ¥688)",
 				}
@@ -367,7 +368,7 @@ export function gates(stack) {
 				}
 			: null,
 	];
-	return list.filter(Boolean).map((g) => ({ ...g, pack: "cn-mainland" }));
+	return list.filter(Boolean).map((g, seq) => ({ ...g, seq, pack: "cn-mainland" }));
 }
 
 export default {

@@ -13,7 +13,32 @@ export function parseSpan(text) {
 // Gates that list `after` are held until those are done. A just-in-time gate (one
 // that costs money) waits until everything else its dependents need is done too,
 // so nothing is paid for while other steps are still pending.
-export function route(gates, state, now = new Date()) {
+// Dependencies first; among steps free at the same time, the order their pack or
+// adapter wrote them in, so the route reads top to bottom.
+function ordered(gates) {
+	const ids = new Set(gates.map((g) => g.id));
+	const rank = (g) => [g.seq ?? Number.MAX_SAFE_INTEGER, g.id];
+	const cmp = (a, b) => rank(a)[0] - rank(b)[0] || rank(a)[1].localeCompare(rank(b)[1]);
+	const pending = new Map(gates.map((g) => [g.id, (g.after ?? []).filter((id) => ids.has(id)).length]));
+	const out = [];
+	const free = gates.filter((g) => pending.get(g.id) === 0).sort(cmp);
+	while (free.length) {
+		const g = free.shift();
+		out.push(g);
+		for (const d of gates.filter((x) => (x.after ?? []).includes(g.id))) {
+			pending.set(d.id, pending.get(d.id) - 1);
+			if (pending.get(d.id) === 0) {
+				free.push(d);
+				free.sort(cmp);
+			}
+		}
+	}
+	if (out.length !== gates.length) throw new Error(`steps wait on each other in a loop: ${gates.filter((g) => !out.includes(g)).map((g) => g.id).join(", ")}`);
+	return out;
+}
+
+export function route(unordered, state, now = new Date()) {
+	const gates = ordered(unordered);
 	const byId = new Map(gates.map((g) => [g.id, g]));
 	const done = (id) => !byId.has(id) || DONE.has(byId.get(id).status);
 	const dependents = (id) => gates.filter((g) => (g.after ?? []).includes(id));
