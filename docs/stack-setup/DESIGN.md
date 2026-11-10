@@ -170,3 +170,4 @@ Terraform/OpenTofu was weighed against this design in [terraform-comparison.md](
 One app can have several deployments, each with its own stack file. Their providers can be completely different: Vercel and AWS for one, Tencent CloudBase or Lighthouse servers for a China mainland one. A top-level `jurisdiction:` loads a **compliance pack**: an interview, validation rules and guided steps for that place's filings.
 - Guided steps for long human flows, one screen at a time: [guided-setup.md](guided-setup.md).
 - China mainland (Tencent CloudBase or servers, ICP, police filing, mini programs, WeChat Pay and sign-in, PIPL): [china-mainland.md](china-mainland.md), with a synthetic [example-cn.stack.yaml](example-cn.stack.yaml).
+- One sign-in per provider, with the agent minting everything else, and an agent inbox for confirmation emails: [one-login.md](one-login.md).

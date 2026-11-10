@@ -16,7 +16,13 @@ Status: design, updated with the owner's decisions on 10 Nov 2026 (see the next 
 1. **An ecosystem, not one stack.** The major providers above are the set to support, alongside the global ones.
 2. **Skills are part of the stack.** Every provider names the agent skills and plugins that help with it (for example CloudBase's toolkit). `stack doctor` lists them, installed or not, so none are missed when building starts. Installing still asks first.
 3. **Money as late as possible.** The filing server is bought only when everything else for the filing is ready: account and domain real-name, prepared values, and the app details. Until then the app runs locally and on free default domains. The domain is the exception: it's cheap, and its real-name check takes days.
-4. **Who files: a person first, a one-person company later.** Registering a business is out of scope for the skill. A home address can't be used without converting it to commercial use, which needs a site certificate the owner won't accept. Finding a reliable registered-address service is a separate piece of research.
+4. **Who files (updated 11 Nov 2026): a one-person limited company (一人有限责任公司) at an approved hosted address (集群注册), in Guangzhou by default.**
+   - Limited liability is safer, given children's data.
+   - The home address is never used.
+   - The China pack now guides the registration as a business track: plan; choose a host from the district's approved list; register on the Guangdong portal; open the business bank account; tax and a bookkeeper. Everything that needs the business waits for it.
+   - Guangzhou's Nansha district advertises same-day one-person-company licences, and Guangdong opened an OPC company-opening section in April 2026 ([Nansha OPC](http://www.gzns.gov.cn/zwgk/rdzt/OPC/OPCYLS/content/post_10745016.html)).
+   - No official free registered address is published; districts set their own OPC address support, so the guide's first question to the district asks for it.
+   - The research page is [China Entity and Payments](https://claude.ai/artifact/V8Qgp8yPRzLb8rCqDdy8uV).
 5. **Which CloudBase plans count for filing:** the owner checks in the filing form. Transfer times, fees and the B25 ownership limit aren't researched further; the guide gives the steps and shows where the current answer is.
 6. **First app: KidsBuddy**, its iOS app and backend. Its China deployment is completely separate from any overseas one, data included.
 
