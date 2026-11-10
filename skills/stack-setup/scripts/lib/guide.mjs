@@ -127,7 +127,7 @@ export function interviewScreen(pack, stack) {
 		"",
 		"Answer once; they go in stack.yaml under profile: and remove the steps that don't apply.",
 		"",
-		...pack.interview.map((q) => `- ${q.key}: ${q.question}${q.options ? ` (${q.options.join(" | ")})` : ""}${p[q.key] !== undefined ? `  → now: ${JSON.stringify(p[q.key])}` : "  → not answered"}${q.note ? `\n  ${q.note}` : ""}`),
+		...pack.interview.filter((q) => !q.when || q.when(p)).map((q) => `- ${q.key}: ${q.question}${q.options ? ` (${q.options.join(" | ")})` : ""}${p[q.key] !== undefined ? `  → now: ${JSON.stringify(p[q.key])}` : "  → not answered"}${q.note ? `\n  ${q.note}` : ""}`),
 		"",
 	].join("\n");
 }

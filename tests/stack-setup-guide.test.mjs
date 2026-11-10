@@ -193,3 +193,35 @@ test("route: steps read in dependency order, and a loop is reported", () => {
 	assert.deepEqual(route(gates, { gates: {} }).steps.map((s) => s.id), ["a-first", "z-last"]);
 	assert.throws(() => route([{ id: "x", after: ["y"] }, { id: "y", after: ["x"] }], { gates: {} }), /in a loop: x, y/);
 });
+
+const COMPANY = CN.replace("  subject: mainland-person\n", "  subject: company\n  registration: cluster-host\n  city: guangzhou-nansha\n").replace("commercial: false", "commercial: true");
+
+test("business track: a one-person company at a hosted address comes first, and everything that needs it waits", async () => {
+	const dir = await workspace(COMPANY);
+	const { out } = await run(dir, ["guide", "all"]);
+	assert.match(out, /^## Route for family-cn: 0 of \d+ done\n\n### business\n/);
+	assert.match(out, /Plan the one-person limited company \(一人有限责任公司\)/);
+	assert.match(out, /Choose an approved hosted address \(集群注册\) in the district — you, a few days to compare two hosts 💲/);
+	assert.match(out, /Real-name verify your Tencent Cloud account as a business .* · after cn\.biz\.bank/);
+	assert.match(out, /Buy family-example\.cn at Tencent Domains .* · after cn\.biz\.register/);
+	assert.match(out, /Open WeChat Pay and Alipay merchant accounts — you.* · after cn\.biz\.bank, cn\.filing\.review/);
+	const first = await run(dir, ["guide"]);
+	assert.match(first.out, /Plan the one-person limited company/, "the agent's plan is the only thing ready at the start");
+	await run(dir, ["guide", "done", "cn.biz.plan"]);
+	const host = await run(dir, ["guide"]);
+	assert.match(host.out, /Choose an approved hosted address \(集群注册\)/);
+	assert.match(host.out, /请问本区有哪些备案的集群注册托管机构/);
+	assert.match(host.out, /Walk away: unregistered addresses are rejected/);
+});
+
+test("business track: city is asked for a business being formed, not for a person", async () => {
+	const missingCity = await workspace(COMPANY.replace("  city: guangzhou-nansha\n", ""));
+	const asked = await run(missingCity, ["guide"]);
+	assert.equal(asked.code, 10);
+	assert.match(asked.out, /- city: For a business: which city and district.*→ not answered/);
+	const person = await workspace();
+	const ask = await run(person, ["guide", "ask"]);
+	assert.doesNotMatch(ask.out, /- registration:|- city:/, "a person isn't asked business questions");
+	const all = await run(person, ["guide", "all"]);
+	assert.doesNotMatch(all.out, /### business/);
+});
