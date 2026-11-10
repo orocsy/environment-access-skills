@@ -1,0 +1,56 @@
+# Example stack file for one app. Synthetic names; no IDs or secrets.
+# Each app commits its own copy; .stack/state.json beside it records resource IDs only.
+app: example-app
+domain: example.com
+environments: [production]
+
+capabilities:
+  dns:
+    provider: cloudflare        # zone + records by API token
+    registrar: godaddy          # nameserver change is a console gate
+  api_host:
+    provider: aws-ec2-docker    # alternatives: render, railway, fly
+    region: ap-southeast-2
+    size: t3.micro
+    ingress: cloudflare-tunnel  # no public ports
+    hostname: api               # → api.example.com
+  web:
+    provider: vercel
+    projects: [console, storefront]
+  database:
+    provider: docker-postgres   # alternatives: neon, supabase
+    on: api_host
+  cache:
+    provider: docker-redis      # alternative: upstash
+    on: api_host
+  email:
+    provider: resend
+    subdomain: mail             # → mail.example.com
+    region: ap-northeast-1
+    sender: no-reply
+  payments:
+    provider: stripe
+    mode: sandbox               # live keys are a go-live gate
+    connect: oauth
+    webhooks: [connect, billing]
+  signin:
+    provider: google-oauth      # alternative: clerk (shared dev credentials)
+    surfaces: [api, console]
+  ci:
+    provider: github
+    repo: owner/example-app
+
+# Env names the app reads; each capability promises its own.
+contract:
+  email:    [RESEND_API_KEY, EMAIL_FROM]
+  payments: [STRIPE_SECRET_KEY, STRIPE_CONNECT_CLIENT_ID, STRIPE_CONNECT_WEBHOOK_SECRET, STRIPE_BILLING_WEBHOOK_SECRET]
+  signin:   [GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET]
+  api_host: [API_PUBLIC_URL]
+
+secrets:
+  canonical: { type: server-env, host: api_host, path: ~/example-app/app.env }
+  mirrors:
+    - { type: github-secret, repo: owner/example-app, name: APP_ENV }
+  config:                      # not secret; Vercel "Config" type
+    - { target: vercel, projects: [console, storefront], name: API_URL, from: api_host.url }
+    - { target: vercel, projects: [console, storefront], name: NEXT_PUBLIC_API_URL, from: api_host.url }
