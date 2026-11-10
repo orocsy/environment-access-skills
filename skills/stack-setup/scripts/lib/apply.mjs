@@ -20,7 +20,7 @@ function dnsBridge(ctx, adapters) {
 		const none = () => {
 			throw new Blocked("this stack has no DNS capability that can write records");
 		};
-		return { provider: "no DNS provider", missing: none, ensure: none };
+		return { provider: "no DNS provider", missing: none, ensure: none, tunnelToken: none };
 	}
 	const [, cap] = entry;
 	const adapter = adapters[cap.provider];
@@ -28,6 +28,7 @@ function dnsBridge(ctx, adapters) {
 		provider: cap.provider,
 		missing: (records) => adapter.missingRecords(ctx, cap, records),
 		ensure: (records, owner) => adapter.ensureRecords(ctx, cap, records, owner),
+		tunnelToken: (name) => adapter.tunnelToken(ctx, cap, name),
 	};
 }
 
@@ -53,7 +54,7 @@ export async function plan(ctx, adapters, { mirrors = false, waitMinutes } = {})
 		const adapter = adapters[cap.provider];
 		if (!adapter?.plan) continue;
 		try {
-			steps.push(...(await adapter.plan(ctx, name, cap, { storeHas, waitMinutes })).map((s) => ({ capability: name, ...s })));
+			steps.push(...(await adapter.plan(ctx, name, cap, { storeHas, storeReadable: storeText !== null, waitMinutes })).map((s) => ({ capability: name, ...s })));
 		} catch (error) {
 			if (!(error instanceof Blocked)) throw error;
 			steps.push({ id: name, capability: name, kind: "blocked", summary: error.message, gate: error.gate });
@@ -100,8 +101,12 @@ export async function plan(ctx, adapters, { mirrors = false, waitMinutes } = {})
 	return steps;
 }
 
-export async function apply(ctx, steps) {
+export async function apply(ctx, steps, { acceptCost = false } = {}) {
 	const done = [];
+	// Spending money needs the owner's yes, given as --accept-cost after they saw
+	// the plan. Checked before anything runs, so a refusal leaves nothing half-built.
+	const costly = steps.find((s) => s.cost && CHANGES.includes(s.kind));
+	if (costly && !acceptCost) return { done, failed: { ...costly, error: `this costs money (${costly.cost}); nothing was changed. Run again with --accept-cost once the owner agrees` } };
 	for (const step of steps) {
 		// Blocked steps are skipped: they only stop their own capability. A key is
 		// never minted unless the store it goes into could be read.

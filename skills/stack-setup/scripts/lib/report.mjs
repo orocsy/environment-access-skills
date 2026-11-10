@@ -88,7 +88,7 @@ export function planMarkdown(stack, steps, { confirmHint = false } = {}) {
 			"",
 			changes.length ? `${changes.length} change${changes.length === 1 ? "" : "s"}; nothing has been changed yet.` : "Nothing to change.",
 			"",
-			...steps.map((s) => `- ${KIND[s.kind]} \`${s.id}\`: ${s.summary}${s.gate ? ` (gate \`${s.gate}\`)` : ""}`),
+			...steps.map((s) => `- ${KIND[s.kind]} \`${s.id}\`: ${s.summary}${s.cost ? ` 💲 ${s.cost}` : ""}${s.gate ? ` (gate \`${s.gate}\`)` : ""}`),
 			"",
 			...(confirmHint ? ["Run again with --confirm to make these changes.", ""] : []),
 		].join("\n"),

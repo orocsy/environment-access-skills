@@ -12,6 +12,18 @@ import { allGates, doctor, importResources, verify, worst } from "./lib/runner.m
 import { closeByChecks, setGate } from "./lib/gates.mjs";
 import { applyMarkdown, connectMarkdown, doctorMarkdown, gatesMarkdown, planMarkdown, teardownMarkdown, teardownResultMarkdown, verifyMarkdown } from "./lib/report.mjs";
 import { CHANGES, apply, plan, teardown, teardownList } from "./lib/apply.mjs";
+import { pickup, rotate } from "./lib/rotate.mjs";
+
+// Bootstrap scripts are named relative to the app repo, which holds the stack file.
+function repoRootOf(stackPath, cwd) {
+	let dir = dirname(stackPath);
+	for (;;) {
+		if (existsSync(join(dir, ".git"))) return dir;
+		const up = dirname(dir);
+		if (up === dir) return cwd;
+		dir = up;
+	}
+}
 
 const strip = ({ run, ...step }) => step;
 import { adapters as builtIn } from "./adapters/index.mjs";
@@ -30,20 +42,24 @@ Changes (each shows its plan and does nothing without --confirm):
   apply      create what's missing, mint keys, write the secret store and mirrors
   sync       copy the secret store to every mirror and correct config values
   teardown   remove everything stack-setup created (never what it imported)
+  rotate <name>   replace a key or secret: new one in, app reloaded, old one revoked
+                  (an env name a provider mints, or agent-key; --revoke <id> for a key made by hand)
   gates set <id> <open|waiting|done|skipped> [--by name] [--note text]
+  gates pickup <id> --file <path>   store what a person handed back (Google's client
+                  JSON or a KEY=value file), refresh the mirrors, move the file to the Trash
 
 Options:
   --stack <file>    default: ./infra/stack/stack.yaml, then ./stack.yaml
   --confirm         actually make the changes the plan shows
+  --accept-cost     allow steps that cost money (only after the owner agreed)
   --wait <minutes>  how long apply waits for DNS verification (default 10)
   --report <file>   also write the Markdown report to this file
   --json            print JSON instead of Markdown
   --no-save         don't update .stack/state.json
+`;
 
-Coming in M3: rotate.`;
-
-const LATER = { rotate: "M3" };
-const COMMANDS = ["verify", "import", "gates", "doctor", "connect", "plan", "apply", "sync", "teardown"];
+const LATER = {};
+const COMMANDS = ["verify", "import", "gates", "doctor", "connect", "plan", "apply", "sync", "teardown", "rotate"];
 
 export async function loadStack(path, adapters = builtIn) {
 	const { stack, errors } = validateStack(parseYaml(await readFile(path, "utf8")), adapters);
@@ -64,6 +80,9 @@ export async function main(argv, { adapters = builtIn, out = process.stdout, cwd
 			by: { type: "string" },
 			note: { type: "string" },
 			confirm: { type: "boolean" },
+			"accept-cost": { type: "boolean" },
+			revoke: { type: "string", multiple: true },
+			file: { type: "string" },
 			wait: { type: "string" },
 			help: { type: "boolean", short: "h" },
 		},
@@ -89,7 +108,7 @@ export async function main(argv, { adapters = builtIn, out = process.stdout, cwd
 	const stack = await loadStack(stackPath, adapters);
 	const statePath = join(dirname(stackPath), ".stack", "state.json");
 	const state = await loadState(statePath, stack.app);
-	const ctx = makeContext(stack, state, overrides);
+	const ctx = makeContext(stack, state, { repoRoot: repoRootOf(stackPath, cwd), ...overrides });
 	const at = ctx.now().toISOString();
 	const print = (data, markdown) => out.write(values.json ? `${JSON.stringify(data, null, 2)}\n` : markdown);
 	let code = 0;
@@ -120,6 +139,17 @@ export async function main(argv, { adapters = builtIn, out = process.stdout, cwd
 			const [, id, status] = rest;
 			setGate(gates, state, id, status, { by: values.by, note: values.note, now: at });
 			out.write(`${id} → ${status}\n`);
+		} else if (rest[0] === "pickup") {
+			const gate = gates.find((g) => g.id === rest[1]);
+			if (!gate) throw new Error(`no gate "${rest[1]}"; run stack gates to list them`);
+			if (!values.file) throw new Error("pass --file <the downloaded or decrypted file>");
+			if (!values.confirm) {
+				out.write(`Would store ${(gate.receive ?? []).join(", ")} from ${values.file} in the ${stack.secrets?.canonical?.type ?? "missing"} store, refresh its mirrors${stack.secrets?.canonical?.reload ? ", reload the app" : ""}, then move the file to the Trash.\nRun again with --confirm.\n`);
+				return 10;
+			}
+			const result = await pickup(ctx, gate, values.file);
+			if (!gate.closedBy) state.gates[gate.id] = { status: "done", at, by: "pickup" };
+			out.write(`Stored ${result.names.join(", ")}; mirrors ${result.mirrors.join(", ") || "none"}${result.reloaded ? "; app reloaded" : ""}. The file is in the Trash.\n`);
 		} else print(gates, gatesMarkdown(gates, { all: values.all }));
 	} else if (command === "doctor") {
 		const result = await doctor(ctx, adapters);
@@ -132,6 +162,14 @@ export async function main(argv, { adapters = builtIn, out = process.stdout, cwd
 		const logins = result.checks.filter((c) => c.capability !== "tools" || c.status !== "green");
 		print({ checks: logins, gates: preflight }, connectMarkdown(stack, logins, preflight));
 		code = worst(logins) === "green" ? 0 : 2;
+	} else if (command === "rotate") {
+		const target = rest[0];
+		if (!target) throw new Error("say what to rotate, like stack rotate RESEND_API_KEY");
+		if (!values.confirm) {
+			out.write(`Would replace ${target}: make a new one, put it in the store and mirrors${stack.secrets?.canonical?.reload ? ", reload the app" : ""}, then revoke the old one. Run again with --confirm.\n`);
+			return 10;
+		}
+		out.write(`${await rotate(ctx, adapters, target, { revoke: values.revoke ?? [] })}\n`);
 	} else if (command === "teardown") {
 		const list = teardownList(state);
 		if (!values.confirm) {
@@ -152,7 +190,7 @@ export async function main(argv, { adapters = builtIn, out = process.stdout, cwd
 			if (command === "plan") return pending.length ? 10 : shown.some((s) => s.kind === "blocked") ? 2 : 0;
 			return pending.length ? 10 : 0;
 		}
-		const result = await apply(ctx, shown);
+		const result = await apply(ctx, shown, { acceptCost: values["accept-cost"] });
 		const markdown = applyMarkdown(stack, result, at);
 		print({ done: result.done.map(({ run, ...s }) => s), waiting: result.waiting && strip(result.waiting), failed: result.failed && strip(result.failed) }, markdown);
 		if (values.report) await writeFile(resolve(cwd, values.report), markdown);
