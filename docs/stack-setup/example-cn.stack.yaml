@@ -1,0 +1,65 @@
+# Example China mainland deployment. Synthetic names; no IDs or secrets.
+# Design: docs/stack-setup/china-mainland.md. The Tencent adapters and the
+# cn-mainland compliance pack are planned (C1–C3); until then these providers
+# are reported as skipped, not failed.
+app: example-cn
+domain: example.cn
+environments: [production]
+jurisdiction: cn-mainland          # loads the China compliance pack (C2)
+
+# The guide's one-time interview (docs/stack-setup/guided-setup.md).
+profile:
+  subject: company                 # company | mainland-person | foreign-person
+  province: guangdong
+  commercial: false                # true adds the B25 licence track
+  forms: [website, mini-program]
+  data_leaves_mainland: false      # keep China data in China
+  children: true                   # under-14s: parent consent, sensitive data
+
+capabilities:
+  dns:
+    provider: dnspod
+    registrar: tencent             # must be MIIT-approved; transfer in first if not
+  web:
+    provider: tencent-cloudbase    # serverless static hosting
+    env: example-cn-prod
+    hosting: static
+  api:
+    provider: tencent-cloudbase    # CloudRun container
+    env: example-cn-prod
+    cloudrun: api
+  # Not serverless instead:
+  # api_host:
+  #   provider: tencent-lighthouse
+  #   region: ap-guangzhou
+  #   billing: monthly             # filing resources must be monthly or yearly
+  #   bootstrap: infra/bootstrap.sh
+  database:
+    provider: tencent-cloudbase-mysql
+    env: example-cn-prod
+  email:
+    provider: tencent-ses
+    subdomain: mail
+  sms:
+    provider: tencent-sms
+    sign: 示例
+  payments:
+    provider: wechat-pay
+  signin:
+    provider: wechat-login
+    surfaces: [website, mini-program]
+  ci:
+    provider: github
+    repo: owner/example-cn
+
+contract:
+  api:      [DATABASE_URL]
+  email:    [TENCENT_SES_SECRET_ID, TENCENT_SES_SECRET_KEY, EMAIL_FROM]
+  sms:      [TENCENT_SMS_SDK_APP_ID]
+  payments: [WECHAT_PAY_MCH_ID, WECHAT_PAY_API_V3_KEY, WECHAT_PAY_SERIAL_NO]
+  signin:   [WECHAT_APP_ID, WECHAT_APP_SECRET]
+
+secrets:
+  canonical: { type: local-env, path: ~/.config/example-cn/app.env }
+  mirrors:
+    - { type: github-secret, repo: owner/example-cn, name: APP_ENV }
