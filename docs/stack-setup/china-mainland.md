@@ -1,6 +1,6 @@
 # China mainland stacks: Tencent Cloud, serverless or servers, plus the filings
 
-Status: research and design for owner approval, 10 Nov 2026. Not legal advice. Each fact names its source, and those marked **verify** were not confirmed from an official page. The guided flow itself is in [guided-setup.md](guided-setup.md).
+Status: design, updated with the owner's decisions on 10 Nov 2026 (see the next section). Not legal advice. Each fact names its source. Where a detail changes over time (prices, transfer times, which plans count), the guide tells you where to see the current answer instead of guessing.
 
 ## The short version
 
@@ -10,6 +10,33 @@ Status: research and design for owner approval, 10 Nov 2026. Not legal advice. E
   - **Servers: Lighthouse or CVM.** The same Docker-on-a-server shape as WiggleTrail's EC2 box, driven by `tccli`.
 - **The slow part is the filings, not the code.** ICP filing must happen before a mainland server can serve a domain. A police (公安) filing is due within 30 days of going live. Apps and mini programs need their own filing. Payments, WeChat sign-in and SMS each need verified qualifications, mostly a business licence.
 - **The biggest early decision is who files.** Normally a mainland company, or a person with a mainland ID. A foreign company needs a mainland entity (a WFOE or a partner). Foreign individuals can file with a passport only in some provinces. Selling online may also need a commercial ICP licence (B25), which is much harder.
+
+## Owner decisions (10 Nov 2026)
+
+1. **An ecosystem, not one stack.** The major providers above are the set to support, alongside the global ones.
+2. **Skills are part of the stack.** Every provider names the agent skills and plugins that help with it (for example CloudBase's toolkit). `stack doctor` lists them, installed or not, so none are missed when building starts. Installing still asks first.
+3. **Money as late as possible.** The filing server is bought only when everything else for the filing is ready: account and domain real-name, prepared values, and the app details. Until then the app runs locally and on free default domains. The domain is the exception: it's cheap, and its real-name check takes days.
+4. **Who files: a person first, a one-person company later.** Registering a business is out of scope for the skill. A home address can't be used without converting it to commercial use, which needs a site certificate the owner won't accept. Finding a reliable registered-address service is a separate piece of research.
+5. **Which CloudBase plans count for filing:** the owner checks in the filing form. Transfer times, fees and the B25 ownership limit aren't researched further; the guide gives the steps and shows where the current answer is.
+6. **First app: KidsBuddy**, its iOS app and backend. Its China deployment is completely separate from any overseas one, data included.
+
+### Taking payments: person, individual business or one-person company
+
+This is general information, not advice. Registration itself isn't something the skill guides.
+
+| | Person (no registration) | Individual business (个体工商户) | One-person company (一人有限责任公司) |
+|---|---|---|---|
+| Liability | Personal | **Unlimited**: personal assets answer for debts | **Limited** to the company's assets. The one owner must be able to show company and personal money were kept apart, or they share the liability. |
+| Registered address | Not needed | Needed | Needed |
+| ICP filing | As a person | As the business | As the company |
+| WeChat Pay / Alipay merchant account | No | Yes | Yes |
+| Commercial licence (B25) | No | No | Possible, with the capital and staffing requirements |
+| Upkeep | None | Simple tax filings | Bookkeeping and monthly or quarterly tax filings |
+
+What a person can do to charge, to research before building:
+- **Apple in-app purchase** for digital services inside the iOS app, paid to the individual developer account.
+- **Platforms that collect for you** (knowledge-payment and membership platforms) and settle to a person.
+- **A registered-address service** (集群注册, incubator or co-working seats), so a business can register without a home address. Some are legitimate local-government programmes; others aren't, so check each one's licence.
 
 ## How it fits the existing design
 
@@ -55,7 +82,7 @@ A full synthetic example is in [example-cn.stack.yaml](example-cn.stack.yaml).
 - **Hosting:**
   - For a filing on Tencent Cloud you need an eligible mainland resource, bought first. A CVM, a Lighthouse server, a Serverless service or a load balancer all qualify, or an authorisation code (备案授权码) from another account ([Tencent: first filing](https://cloud.tencent.com/document/product/243/97668)).
   - Lighthouse must be a mainland region and billed monthly or yearly ([Tencent: Lighthouse ICP](https://cloud.tencent.com/document/product/1207/45756)).
-  - **Verify:** which CloudBase plans count as filing resources, and whether a custom domain on CloudBase static hosting needs a filing. I found no official statement. Older guides say it does.
+  - **Which resources count is your choice to check, not ours to guess:** the filing form lists every resource on your account that qualifies. If a CloudBase environment appears there, it works; if not, use a server.
 - **Limits:** a person can add one website per filing order. A company can add up to 10, with one domain per website ([Tencent: how to file](https://cloud.tencent.com/document/product/243/19628)).
 
 ## Adapters to add
@@ -67,10 +94,10 @@ A full synthetic example is in [example-cn.stack.yaml](example-cn.stack.yaml).
 | `tencent-cloudbase` | web, API, functions, storage | CloudBase CLI v3 `tcb`: `tcb hosting deploy`, `tcb app deploy`, `tcb cloudrun deploy -e <env>`, `tcb fn deploy` ([CLI v3](https://cloudbase.cloud.tencent.com/en/blog/2026/04/21/cloudbase-cli-v3), [cloudrun deploy](https://docs.cloudbase.net/en/cli-v1/cloudrun/deploy)) | Serverless. The environment ID is the resource. |
 | `tencent-lighthouse`, `tencent-cvm` | API host | `tccli lighthouse …`, `tccli cvm …` | Same bootstrap shape as `aws-ec2-docker`. Monthly billing for filing. |
 | `tencent-cloudbase-mysql`, `tencentdb` | database | `tcb`, `tccli cdb` | Data stays in the mainland region |
-| `tencent-ses` | email | `tccli ses` | Sending domain plus DNS records, like Resend. **Verify** its domain rules. |
+| `tencent-ses` | email | `tccli ses` | Sending domain plus DNS records, like Resend. The console shows the records to add. |
 | `tencent-sms` | SMS | `tccli sms` | Signature and templates need qualification review, then carrier registration, before anything sends ([Tencent SMS notice](https://cloud.tencent.com/announce/detail/2156)) |
 | `wechat-pay`, `alipay` | payments | merchant platforms | A merchant account needs a business licence (individual business or company) |
-| `wechat-login` | sign-in | WeChat Open Platform | Developer qualification is a paid review, about CNY 300 in older guides (**verify**), plus a review of the website app, which needs a live site |
+| `wechat-login` | sign-in | WeChat Open Platform | Developer qualification is a paid review (the fee is shown when you apply), plus a review of the website app, which needs a live site |
 
 ### The agent's own Tencent identity (like the AWS agent key)
 
@@ -97,11 +124,11 @@ The guided flow (see [guided-setup.md](guided-setup.md)) turns this into one scr
 1. ★ **Tencent Cloud real-name verification**, as a person or a company. It decides which filing types are possible.
 2. **Domain.**
    - The agent checks the suffix and the registrar against MIIT's lists.
-   - If the domain is at a foreign registrar: ★💲 the owner unlocks it and gets the transfer code; the agent starts the transfer into Tencent Domains. ⏳ About 5–7 days (**verify**).
+   - If the domain is at a foreign registrar: ★💲 the owner unlocks it and gets the transfer code; the agent starts the transfer into Tencent Domains. ⏳ Usually about a week; the console shows its progress.
    - ★ Real-name template in the filing subject's name. ⏳ Then 2–3 working days for the details to sync ([Aliyun](https://help.aliyun.com/zh/icp-filing/basic-icp-service/user-guide/prepare-and-check-the-domain-name)).
 
 ### Track B: hosting (day 1, alongside A)
-3. 💲 **Buy the filing resource.** A monthly-billed mainland Lighthouse or CVM server, or the CloudBase plan that counts (**verify**). The plan shows the price.
+3. 💲 **Buy the filing resource.** A monthly-billed mainland Lighthouse or CVM server, or a CloudBase environment if the filing form lists it. The plan shows the price.
 4. The agent **builds everything that doesn't need the domain:**
    - the CloudBase environment or server;
    - the database;
@@ -160,17 +187,40 @@ With a mainland subject ready: about 2–5 weeks to a filed, live site. That's a
 
 The interview recommends one of these from the answers. It doesn't stop the owner choosing another.
 
-## Milestones (to approve, after M3 merges)
+## Milestones
 
-1. **G1:** `guide` for the existing stacks (see [guided-setup.md](guided-setup.md)).
-2. **C1:** Tencent read-only adapters: `dnspod`, `tencent-cloudbase`, `tencent-lighthouse`, plus the `doctor` checks for `tcb` and `tccli`. Tested with recorded output.
-3. **C2:** the China compliance pack. The interview, the validation rules above, and tracks A–F as guided gates, each with its sources and last-checked date.
-4. **C3:** provision for CloudBase and Lighthouse; the Tencent CAM agent key; DNSPod records; Tencent SES and SMS.
-5. **C4:** a dry run, `plan` and `guide all`, for a real candidate app, once the owner picks one and answers the interview.
+1. **G1 and C2, built in [#8](https://github.com/orocsy/environment-access-skills/pull/8), a draft:**
+   - `stack guide`;
+   - the `cn-mainland` pack, with its questions, warnings and route;
+   - doctor's list of the skills a stack needs.
+2. **C1:** Tencent read-only adapters for `dnspod`, `tencent-lighthouse` and `tencent-cloudbase`, plus `doctor` checks for `tcb` and `tccli`. Tested with recorded output.
+3. **C3:** provisioning:
+   - a Lighthouse server, bought only through the just-in-time step and `--accept-cost`;
+   - DNSPod records, COS buckets, Tencent SMS and SES;
+   - the Tencent CAM agent key.
+4. **C4:** KidsBuddy's China deployment goes live, step by step, from its own `infra/stack/cn.stack.yaml`.
 
-## Questions for the owner
+## KidsBuddy on the mainland (first app)
 
-1. Which app would go to the mainland, and as what: a website, a mini program or an app?
-2. Who would file? An existing mainland company, a partner, a person with a mainland ID, or yourself with a passport, depending on the province?
-3. Would it take payments in China? This decides whether B25 matters.
-4. Should China data stay fully separate from the overseas deployment? I recommend yes.
+KidsBuddy is a FastAPI and PostgreSQL backend with long-running workers and a scheduler, a native SwiftUI app, and phone sign-in by Tencent SMS. Long-running workers and a database suit a **server** better than serverless, so the China stack is:
+
+| Capability | Provider | Why |
+|---|---|---|
+| DNS and domain | DNSPod and Tencent Domains, a new domain | Filed in the person's name; nothing shared with the overseas setup |
+| API host | `tencent-lighthouse` in a mainland region, running the existing `infra/deploy/compose.yaml` | Same Docker Compose the project already has: API, workers, scheduler, PostgreSQL. It's the filing resource too. |
+| Photos and backups | Tencent COS, mainland region, private buckets | Takes over from R2, which isn't in the mainland |
+| SMS sign-in | `tencent-sms` | Already the +86 provider. As a person, the signature uses the filed app's or site's name, so it comes after the filing. |
+| AI and speech | DeepSeek, and Alibaba Model Studio's mainland endpoint | Already mainland providers |
+| iOS | Apple Developer (individual), the app filing, and the filing number in App Store Connect for the China storefront | |
+
+Profile: `subject: mainland-person`, `forms: [api, ios-app]`, `children: true`, `commercial: false` for now, `data_leaves_mainland: false`, `domain: new`.
+
+The route is about 14 steps:
+1. **Up front:** your real-name checks and the domain.
+2. **Agent preparation:** the filing values and the app's details, done in parallel.
+3. **The server, last before submitting.**
+4. **The filing:** one order for the API domain and the app, then the face check, then the 24-hour SMS, then up to 20 working days of review.
+5. **Going live.**
+6. **After launch:** App Store Connect, SMS approval, and the police filing within 30 days.
+
+`stack guide all` prints it. KidsBuddy's draft stack file is in its own repo.
