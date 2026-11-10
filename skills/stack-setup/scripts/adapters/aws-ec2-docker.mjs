@@ -1,14 +1,21 @@
 import { BLOCKED, Blocked, GREEN, RED, expandHome, firstLine } from "../lib/context.mjs";
 import { publicUrl } from "../lib/schema.mjs";
+import { agentSteps, hasAgentCredentials, removeAgent, rotateAgentKey } from "./aws-agent.mjs";
+import { hostSteps, removeHost } from "./aws-host.mjs";
 
 const LOGIN_GATE = "aws.login";
-const awsArgs = (cap, args) => [...args, "--profile", cap.profile, "--region", cap.region, "--output", "json"];
+
+// The agent's own key once it exists; the owner's sign-in until then.
+export async function profileFor(ctx, cap) {
+	return ctx.once(`aws.profile.${cap.name}`, async () => (cap.agent && (await hasAgentCredentials(ctx, cap)) ? cap.agent.profile : cap.profile));
+}
+export const awsArgs = async (ctx, cap, args) => [...args, "--profile", await profileFor(ctx, cap), "--region", cap.region, "--output", "json"];
 
 async function instance(ctx, cap) {
 	return ctx.once(`aws.instance.${cap.name}`, async () => {
 		const data = await ctx.json(
 			"aws",
-			awsArgs(cap, [
+			await awsArgs(ctx, cap, [
 				"ec2",
 				"describe-instances",
 				"--filters",
@@ -67,7 +74,15 @@ export async function containers(ctx, capName) {
 
 // What only the AWS API can tell: instance, address and firewall.
 async function awsChecks(ctx, name, cap) {
-	const checks = [{ id: "aws.login", status: GREEN, detail: `profile ${cap.profile}` }];
+	const profile = await profileFor(ctx, cap);
+	const checks = [{ id: "aws.login", status: GREEN, detail: profile === cap.profile ? `owner sign-in ${profile}` : `agent key ${profile}` }];
+	const summary = await ctx.json("aws", await awsArgs(ctx, cap, ["iam", "get-account-summary"]), { gate: LOGIN_GATE }).catch(() => null);
+	if (summary)
+		checks.push({
+			id: "aws.root-mfa",
+			status: summary.SummaryMap?.AccountMFAEnabled === 1 ? GREEN : RED,
+			detail: summary.SummaryMap?.AccountMFAEnabled === 1 ? "root user has MFA" : "the AWS root user has no MFA",
+		});
 	const found = await instance(ctx, cap);
 	if (!found) return [...checks, { id: `${name}.instance`, status: RED, detail: `no instance tagged ${cap.name} in ${cap.region}` }];
 	const state = found.State.Name;
@@ -79,7 +94,7 @@ async function awsChecks(ctx, name, cap) {
 	});
 	const addresses = await ctx.json(
 		"aws",
-		awsArgs(cap, ["ec2", "describe-addresses", "--filters", `Name=instance-id,Values=${found.InstanceId}`]),
+		await awsArgs(ctx, cap, ["ec2", "describe-addresses", "--filters", `Name=instance-id,Values=${found.InstanceId}`]),
 		{ gate: LOGIN_GATE },
 	);
 	const eip = addresses.Addresses[0];
@@ -90,7 +105,7 @@ async function awsChecks(ctx, name, cap) {
 	});
 	const groups = await ctx.json(
 		"aws",
-		awsArgs(cap, ["ec2", "describe-security-groups", "--group-ids", ...found.SecurityGroups.map((g) => g.GroupId)]),
+		await awsArgs(ctx, cap, ["ec2", "describe-security-groups", "--group-ids", ...found.SecurityGroups.map((g) => g.GroupId)]),
 		{ gate: LOGIN_GATE },
 	);
 	const open = [
@@ -120,6 +135,9 @@ export default {
 		if (!cap.ssh?.user || !cap.ssh?.key) errors.push("ssh: { user, key } is required");
 		if (cap.ssh?.host !== undefined && !/^[A-Za-z0-9.:-]+$/.test(cap.ssh.host)) errors.push("ssh.host: an IP address or hostname");
 		if (cap.ingress === "cloudflare-tunnel" && !cap.tunnel) errors.push("tunnel: the Cloudflare Tunnel name");
+		if (cap.agent !== undefined && !/^[A-Za-z0-9_.-]+$/.test(cap.agent?.profile ?? "")) errors.push("agent: { profile } names the agent's AWS profile");
+		if (cap.agent?.profile === cap.profile) errors.push("agent.profile must differ from profile (the owner's sign-in)");
+		if (cap.bootstrap !== undefined && !/^[A-Za-z0-9_./-]+\.sh$/.test(cap.bootstrap)) errors.push("bootstrap: a shell script path in the app repo, like infra/ec2-bootstrap.sh");
 		return errors;
 	},
 	gates(cap) {
@@ -128,16 +146,42 @@ export default {
 				id: LOGIN_GATE,
 				bundle: "preflight",
 				type: "consent",
-				title: `Sign in to AWS for profile ${cap.profile}`,
-				prefill: { command: `aws login --profile ${cap.profile}` },
-				note: "AWS sign-ins last 12 hours, so this comes back.",
+				title: cap.agent ? `Sign in to AWS for profile ${cap.profile} (once, so the agent key can be made)` : `Sign in to AWS for profile ${cap.profile}`,
+				prefill: { command: `aws login --profile ${cap.profile} --region ${cap.region}` },
+				note: cap.agent
+					? `After apply makes the agent key, checks use profile ${cap.agent.profile} and this sign-in is needed only to change the agent's permissions.`
+					: "AWS sign-ins last 12 hours, so this comes back. Add agent: { profile } to stop that.",
 				closedBy: "aws.login",
+			},
+			{
+				id: "aws.root-mfa",
+				bundle: "app",
+				type: "console",
+				title: "Turn on MFA for the AWS root user",
+				link: "https://console.aws.amazon.com/iam/home#/security_credentials",
+				note: "Anyone with the root password can close the account or run up charges; MFA stops that.",
+				closedBy: "aws.root-mfa",
 			},
 		];
 	},
+	async plan(ctx, name, cap, options) {
+		const steps = [];
+		if (cap.agent) steps.push(...(await agentSteps(ctx, name, cap)));
+		if (cap.bootstrap) steps.push(...(await hostSteps(ctx, name, cap, options)));
+		return steps;
+	},
+	async remove(ctx, key, resource) {
+		return key.startsWith("aws.agent") ? removeAgent(ctx, key, resource) : removeHost(ctx, key, resource);
+	},
+	async rotate(ctx, name, cap, target) {
+		if (target !== "agent-key" || !cap.agent) return null;
+		const { replaced, now } = await rotateAgentKey(ctx, cap);
+		return `AWS agent key ${now} in use; deleted ${replaced.join(", ") || "nothing"} at AWS`;
+	},
 	async doctor(ctx, name, cap) {
-		const who = await ctx.json("aws", awsArgs(cap, ["sts", "get-caller-identity"]), { gate: LOGIN_GATE });
-		return [{ id: "aws.login", status: GREEN, detail: `signed in to account ${who.Account}` }];
+		const profile = await profileFor(ctx, cap);
+		const who = await ctx.json("aws", await awsArgs(ctx, cap, ["sts", "get-caller-identity"]), { gate: LOGIN_GATE });
+		return [{ id: "aws.login", status: GREEN, detail: `account ${who.Account} as ${profile === cap.profile ? "the owner's sign-in" : `agent key ${profile}`}` }];
 	},
 	async import(ctx, name, cap) {
 		const found = await instance(ctx, cap);
@@ -155,7 +199,7 @@ export default {
 		];
 		const addresses = await ctx.json(
 			"aws",
-			awsArgs(cap, ["ec2", "describe-addresses", "--filters", `Name=instance-id,Values=${found.InstanceId}`]),
+			await awsArgs(ctx, cap, ["ec2", "describe-addresses", "--filters", `Name=instance-id,Values=${found.InstanceId}`]),
 			{ gate: LOGIN_GATE },
 		);
 		const eip = addresses.Addresses[0];

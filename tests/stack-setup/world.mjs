@@ -52,6 +52,13 @@ export function healthyWorld() {
 		sshDown: false,
 		failGhSet: false,
 		vercelEnvs: {},
+		iam: { users: {}, policies: {}, keys: [], seq: 1, mfa: 1 },
+		ec2: { instances: [], addresses: [], groups: [], keyPairs: [], seq: 1, sshReady: true },
+		stripeEndpoints: [
+			{ id: "we_connect", url: "https://api.example.com/webhooks/stripe/connect", status: "enabled", enabled_events: ["a", "b"], secret: FAKE_SECRET },
+			{ id: "we_billing", url: "https://api.example.com/webhooks/stripe/billing", status: "enabled", enabled_events: ["c"] },
+		],
+		bootstrapRuns: [],
 		calls: [],
 	};
 }
@@ -63,8 +70,137 @@ export function fakeRun(world) {
 		if (cmd === "node") return { code: 0, stdout: "v22.13.0\n", stderr: "" };
 		if (cmd === "aws") {
 			if (args[0] === "--version") return { code: 0, stdout: "aws-cli/2.39.4\n", stderr: "" };
-			if (!world.awsLoggedIn) return { code: 255, stdout: "", stderr: "Your session has expired. Please reauthenticate using 'aws login'." };
+			const profile = args[args.indexOf("--profile") + 1];
+			const creds = world.files["~/.aws/credentials"] ?? "";
+			const agentOk = world.iam.keys.some((k) => creds.includes(`aws_access_key_id = ${k.id}`) && k.active);
+			const signedIn = profile === "example-agent" ? agentOk : world.awsLoggedIn;
+			if (!signedIn) return { code: 255, stdout: "", stderr: "Your session has expired. Please reauthenticate using 'aws login'." };
+			const iam = world.iam;
+			const opt = (f) => args[args.indexOf(f) + 1];
 			if (line.startsWith("sts get-caller-identity")) return json({ Account: "000000000000" });
+			if (line.startsWith("iam get-account-summary")) return json({ SummaryMap: { AccountMFAEnabled: iam.mfa } });
+			if (line.startsWith("iam get-user ")) return iam.users[opt("--user-name")] ? json({ User: iam.users[opt("--user-name")] }) : { code: 254, stdout: "", stderr: "NoSuchEntity" };
+			if (line.startsWith("iam create-user")) {
+				const user = { UserName: opt("--user-name"), Arn: `arn:aws:iam::000000000000:user/${opt("--user-name")}` };
+				iam.users[user.UserName] = user;
+				return json({ User: user });
+			}
+			iam.managed ??= {};
+			iam.attached ??= {};
+			if (line.startsWith("iam get-policy ")) {
+				const m = iam.managed[opt("--policy-arn")];
+				return m ? json({ Policy: { Arn: opt("--policy-arn"), DefaultVersionId: `v${m.versions.length}` } }) : { code: 254, stdout: "", stderr: "NoSuchEntity" };
+			}
+			if (line.startsWith("iam get-policy-version")) {
+				const m = iam.managed[opt("--policy-arn")];
+				return json({ PolicyVersion: { Document: encodeURIComponent(JSON.stringify(m.versions[Number(opt("--version-id").slice(1)) - 1])) } });
+			}
+			if (line.startsWith("iam create-policy ")) {
+				const arn = `arn:aws:iam::000000000000:policy/${opt("--policy-name")}`;
+				iam.managed[arn] = { versions: [JSON.parse(opt("--policy-document"))] };
+				return json({ Policy: { Arn: arn } });
+			}
+			if (line.startsWith("iam create-policy-version")) {
+				iam.managed[opt("--policy-arn")].versions.push(JSON.parse(opt("--policy-document")));
+				return ok("{}");
+			}
+			if (line.startsWith("iam list-policy-versions")) {
+				const m = iam.managed[opt("--policy-arn")];
+				return json({ Versions: m.versions.map((_, i) => ({ VersionId: `v${i + 1}`, IsDefaultVersion: i === m.versions.length - 1, CreateDate: `2026-11-0${i + 1}T00:00:00Z` })) });
+			}
+			if (line.startsWith("iam delete-policy-version")) return ok();
+			if (line.startsWith("iam delete-policy ")) {
+				delete iam.managed[opt("--policy-arn")];
+				return ok();
+			}
+			if (line.startsWith("iam attach-user-policy")) {
+				(iam.attached[opt("--user-name")] ??= []).push(opt("--policy-arn"));
+				return ok();
+			}
+			if (line.startsWith("iam detach-user-policy")) {
+				iam.attached[opt("--user-name")] = (iam.attached[opt("--user-name")] ?? []).filter((a) => a !== opt("--policy-arn"));
+				return ok();
+			}
+			if (line.startsWith("iam list-attached-user-policies")) return json({ AttachedPolicies: (iam.attached[opt("--user-name")] ?? []).map((PolicyArn) => ({ PolicyArn })) });
+			if (line.startsWith("iam delete-user ") && (iam.attached[opt("--user-name")] ?? []).length) return { code: 254, stdout: "", stderr: "DeleteConflict: must detach all policies first" };
+			if (line.startsWith("iam get-user-policy"))
+				return iam.policies[opt("--user-name")] ? json({ PolicyDocument: iam.policies[opt("--user-name")] }) : { code: 254, stdout: "", stderr: "NoSuchEntity" };
+			if (line.startsWith("iam put-user-policy")) {
+				iam.policies[opt("--user-name")] = JSON.parse(opt("--policy-document"));
+				return ok();
+			}
+			if (line.startsWith("iam delete-user-policy")) {
+				delete iam.policies[opt("--user-name")];
+				return ok();
+			}
+			if (line.startsWith("iam delete-user")) {
+				delete iam.users[opt("--user-name")];
+				return ok();
+			}
+			if (line.startsWith("iam create-access-key")) {
+				const n = iam.seq++;
+				const key = { id: `AKIASYNTHETIC${String(n).padStart(7, "0")}`, secret: `synthetic/secret/${n}/SYNTHETICsyntheticSYNTH`, active: true, user: opt("--user-name") };
+				iam.keys.push(key);
+				return json({ AccessKey: { AccessKeyId: key.id, SecretAccessKey: key.secret, UserName: key.user } });
+			}
+			if (line.startsWith("iam list-access-keys")) return json({ AccessKeyMetadata: iam.keys.filter((k) => k.active).map((k) => ({ AccessKeyId: k.id })) });
+			if (line.startsWith("iam delete-access-key")) {
+				iam.keys = iam.keys.filter((k) => k.id !== opt("--access-key-id"));
+				return ok();
+			}
+			const ec2 = world.ec2;
+			if (line.startsWith("ssm get-parameter")) return json({ Parameter: { Value: "ami-0synthetic" } });
+			if (line.startsWith("ec2 import-key-pair")) {
+				ec2.keyPairs.push(opt("--key-name"));
+				return json({ KeyName: opt("--key-name") });
+			}
+			if (line.startsWith("ec2 create-security-group")) {
+				const g = { GroupId: `sg-new${ec2.seq++}`, ports: [] };
+				ec2.groups.push(g);
+				return json({ GroupId: g.GroupId });
+			}
+			if (line.startsWith("ec2 authorize-security-group-ingress")) {
+				ec2.groups.find((g) => g.GroupId === opt("--group-id")).ports.push(Number(opt("--port")));
+				return ok();
+			}
+			if (line.startsWith("ec2 run-instances")) {
+				const i = { InstanceId: `i-new${ec2.seq++}`, type: opt("--instance-type"), image: opt("--image-id"), group: opt("--security-group-ids"), state: "running", args };
+				ec2.instances.push(i);
+				return json({ Instances: [{ InstanceId: i.InstanceId }] });
+			}
+			if (line.startsWith("ec2 wait")) return ok();
+			if (line.startsWith("ec2 allocate-address")) {
+				const a = { AllocationId: `eipalloc-new${ec2.seq++}`, PublicIp: "203.0.113.99" };
+				ec2.addresses.push(a);
+				return json(a);
+			}
+			if (line.startsWith("ec2 associate-address")) {
+				Object.assign(ec2.addresses.find((a) => a.AllocationId === opt("--allocation-id")), { InstanceId: opt("--instance-id"), AssociationId: "eipassoc-1" });
+				return ok();
+			}
+			if (line.startsWith("ec2 disassociate-address")) {
+				for (const a of ec2.addresses) if (a.AssociationId === opt("--association-id")) delete a.AssociationId;
+				return ok();
+			}
+			if (line.startsWith("ec2 release-address")) {
+				ec2.addresses = ec2.addresses.filter((a) => a.AllocationId !== opt("--allocation-id"));
+				return ok();
+			}
+			if (line.startsWith("ec2 terminate-instances")) {
+				ec2.instances = ec2.instances.filter((i) => i.InstanceId !== opt("--instance-ids"));
+				return ok();
+			}
+			if (line.startsWith("ec2 delete-security-group")) {
+				ec2.groups = ec2.groups.filter((g) => g.GroupId !== opt("--group-id"));
+				return ok();
+			}
+			if (line.startsWith("ec2 delete-key-pair")) {
+				ec2.keyPairs = ec2.keyPairs.filter((k) => k !== opt("--key-name"));
+				return ok();
+			}
+			if (line.startsWith("ec2 describe-addresses --allocation-ids")) return json({ Addresses: ec2.addresses.filter((a) => a.AllocationId === opt("--allocation-ids")) });
+			if (line.startsWith("ec2 describe-instances") && world.noInstance)
+				return json({ Reservations: ec2.instances.length ? [{ Instances: ec2.instances.map((i) => ({ InstanceId: i.InstanceId, InstanceType: i.type, State: { Name: i.state }, PublicIpAddress: "203.0.113.99", SecurityGroups: [{ GroupId: i.group }] })) }] : [] });
 			if (line.startsWith("ec2 describe-instances"))
 				return json({
 					Reservations: [
@@ -93,7 +229,20 @@ export function fakeRun(world) {
 		if (cmd === "ssh") {
 			if (args[0] === "-V") return { code: 0, stdout: "", stderr: "OpenSSH_9.9\n" };
 			const remote = args.at(-1);
-			if (world.sshDown) return { code: 255, stdout: "", stderr: "ssh: connect to host 203.0.113.10 port 22: Operation timed out" };
+			if (world.sshDown || (world.noInstance && !world.ec2.sshReady)) return { code: 255, stdout: "", stderr: "ssh: connect to host 203.0.113.10 port 22: Operation timed out" };
+			if (remote === "true") return ok();
+			if (remote.startsWith("umask 077 && cat > ~/.stack-bootstrap.env")) {
+				world.bootstrapEnv = opts.input;
+				return ok();
+			}
+			if (remote.startsWith("set -a; . ~/.stack-bootstrap.env")) {
+				world.bootstrapRuns.push({ script: opts.input, env: world.bootstrapEnv, host: args.at(-2) });
+				return ok("bootstrapped\n");
+			}
+			if (remote === world.reloadCommand) {
+				world.reloads = (world.reloads ?? 0) + 1;
+				return ok();
+			}
 			if (remote.startsWith("umask 077 && cat > ")) {
 				world.hostEnv = parseEnv(opts.input);
 				world.hostWrites = (world.hostWrites ?? 0) + 1;
@@ -238,13 +387,21 @@ export function fakeRun(world) {
 			if (!world.stripeInstalled) return { code: 127, missing: true, stdout: "", stderr: "" };
 			if (args[0] === "--version") return { code: 0, stdout: "stripe version 1.40.0\n", stderr: "" };
 			if (args[0] === "config") return { code: 0, stdout: "test_mode_api_key = 'rk_test_***'\n", stderr: "" };
-			if (line.startsWith("webhook_endpoints list"))
-				return json({
-					data: [
-						{ id: "we_connect", url: "https://api.example.com/webhooks/stripe/connect", status: "enabled", enabled_events: ["a", "b"], secret: FAKE_SECRET },
-						{ id: "we_billing", url: "https://api.example.com/webhooks/stripe/billing", status: "enabled", enabled_events: ["c"] },
-					],
-				});
+			if (line.startsWith("webhook_endpoints list")) return json({ data: world.stripeEndpoints.map(({ secret, ...w }) => w) });
+			const d = (key) => args.flatMap((a, i) => (args[i - 1] === "-d" && a.startsWith(`${key}=`) ? [a.slice(key.length + 1)] : []));
+			if (line.startsWith("webhook_endpoints create")) {
+				const w = { id: `we_new${world.stripeEndpoints.length + 1}`, url: d("url")[0], status: "enabled", enabled_events: d("enabled_events[]"), connect: d("connect")[0] === "true", secret: `whsec_SYNTHETICnew${world.stripeEndpoints.length + 1}secret` };
+				world.stripeEndpoints.push(w);
+				return json(w);
+			}
+			if (line.startsWith("webhook_endpoints update")) {
+				Object.assign(world.stripeEndpoints.find((w) => w.id === args[2]), { enabled_events: d("enabled_events[]") });
+				return json({});
+			}
+			if (line.startsWith("webhook_endpoints delete")) {
+				world.stripeEndpoints = world.stripeEndpoints.filter((w) => w.id !== args[2]);
+				return json({ deleted: true });
+			}
 		}
 		if (cmd === "op") return { code: 127, missing: true, stdout: "", stderr: "" };
 		throw new Error(`unexpected command in test: ${cmd} ${line}`);
@@ -279,6 +436,7 @@ export function fakeFetch(world) {
 					success: true,
 					result: { config: { ingress: [{ hostname: "api.example.com", service: "http://localhost:3001" }, { service: "http_status:404" }] } },
 				});
+			if (path.endsWith("/token")) return response(200, { success: true, result: "TUNNELsyntheticTOKENnotreal" });
 			if (path.includes("/cfd_tunnel/"))
 				return response(200, { success: true, result: { id: "tunnel-synthetic", name: "example-api", status: world.tunnelStatus, connections: [{}, {}] } });
 			const all = () => [...(world.cname ? [{ id: "rec-api", type: "CNAME", name: "api.example.com", ...world.cname }] : []), ...world.records];
@@ -318,6 +476,15 @@ export function overridesFor(world, now = "2026-11-09T00:00:00Z") {
 			if (!(path in world.files)) throw Object.assign(new Error("missing"), { code: "ENOENT" });
 			return world.files[path];
 		},
+		writeSecretFile: async (path, text) => {
+			world.files[path] = text;
+			world.fileModes = { ...world.fileModes, [path]: 0o600 };
+		},
+		moveToTrash: async (path) => {
+			world.trashed = [...(world.trashed ?? []), path];
+			delete world.files[path];
+		},
+		sleep: async () => {},
 		now: () => new Date(now),
 	};
 }

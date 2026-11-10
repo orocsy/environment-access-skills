@@ -227,7 +227,7 @@ test("import: records IDs in state and keeps the first-seen time", async () => {
 	assert.equal(state.resources["aws.instance.example-api"].id, "i-0synthetic");
 	assert.equal(state.resources["aws.address.example-api"].ip, "203.0.113.10");
 	assert.equal(state.resources["resend.domain.mail.example.com"].id, "dom-synthetic");
-	assert.equal(state.resources["stripe.webhook.connect"].id, "we_connect");
+	assert.equal(state.resources["stripe.webhook.we_connect"].url, "https://api.example.com/webhooks/stripe/connect");
 	assert.equal(state.resources["vercel.project.example-console"].id, "prj_example-console");
 	const seen = state.resources["cloudflare.zone"].firstSeen;
 	const out = new Sink();
@@ -260,17 +260,18 @@ test("doctor: tools, logins and deadlines, without writing state", async () => {
 	const { code, out } = await run(dir, ["doctor"], world);
 	assert.equal(code, 2);
 	assert.match(out, /`tool\.stripe` \| ❌ red \| stripe is not installed/);
-	assert.match(out, /`aws\.login` \| ✅ green \| signed in to account 000000000000/);
+	assert.match(out, /`aws\.login` \| ✅ green \| account 000000000000 as the owner's sign-in/);
 	assert.match(out, /`cloudflare\.login` \| ✅/);
 	assert.match(out, /2026-11-30 \(21 days\): Stripe MCP[\s\S]*2027-05-04 \(\d+ days\): AWS free-plan credit ends/);
 	await assert.rejects(readFile(statePath(dir)), { code: "ENOENT" });
 });
 
-test("cli: later commands say when they arrive; bad stacks name the problem", async () => {
+test("cli: rotate needs a target and --confirm; bad stacks name the problem", async () => {
 	const dir = await workspace();
-	const later = await run(dir, ["rotate"]);
-	assert.equal(later.code, 64);
-	assert.match(later.out, /arrives in M3/);
+	await assert.rejects(run(dir, ["rotate"]), /say what to rotate/);
+	const unconfirmed = await run(dir, ["rotate", "RESEND_API_KEY"]);
+	assert.equal(unconfirmed.code, 10);
+	assert.match(unconfirmed.out, /Run again with --confirm/);
 	await writeFile(join(dir, "infra/stack/stack.yaml"), "app: x\ndomain: x.com\ncapabilities: {}\n");
 	await assert.rejects(run(dir, ["verify"]), /capabilities: at least one/);
 });
