@@ -20,22 +20,41 @@ try {
 		recursive: true,
 	});
 	await mkdir(join(scratch, "tests"));
+	await mkdir(join(scratch, "skills/secure-key-handoff/references"));
 	await copyFile(
-		resolve("tests/handoff.test.mjs"),
-		join(scratch, "tests/handoff.test.mjs"),
+		resolve("skills/secure-key-handoff/references/key-catalog.json"),
+		join(scratch, "skills/secure-key-handoff/references/key-catalog.json"),
 	);
+	for (const file of ["handoff.test.mjs", "fields.test.mjs"])
+		await copyFile(resolve("tests", file), join(scratch, "tests", file));
 	const target = join(scratch, "skills/secure-key-handoff/scripts/handoff.mjs");
 	await writeFile(target, original);
 	const run = () =>
-		spawnSync(process.execPath, ["--test", "tests/handoff.test.mjs"], {
+		spawnSync(
+			process.execPath,
+			["--test", "tests/handoff.test.mjs", "tests/fields.test.mjs"],
+			{
 			cwd: scratch,
 			encoding: "utf8",
-			timeout: 30000,
-		});
+				timeout: 60000,
+			},
+		);
 	assert.equal(run().status, 0, "Baseline must pass");
 	for (const [name, before, after] of [
 		["envelope version", "envelope.version !== 1 ||", ""],
 		["request expiration", "Date.parse(r.expiresAt) <= Date.now()", "false"],
+		["live key on a test request", 'request.environment !== "live" &&', "false &&"],
+		[
+			"single use",
+			'writeFile(used, new Date().toISOString(), { flag: "wx"',
+			'writeFile(used, new Date().toISOString(), { flag: "w"',
+		],
+		["replace every assignment", 'sets(name, l) ? [] : [l]', "[l]"],
+		["researched guidance required", "if (!guide)", "if (false)"],
+		["ignored staging copy", "if (!(await ignoredOutsideGit(temp)))", "if (false)"],
+		["catalog is test-only", "if (live && (!extra[f.name] || !f.prefixes.length))", "if (false)"],
+		["env file lock", 'writeFile(lock, String(process.pid), { flag: "wx"', 'writeFile(lock, String(process.pid), { flag: "w"'],
+		["git-ignored env file", 'if (git("check-ignore", "-q").status !== 0)', "if (false)"],
 	]) {
 		assert.equal(original.split(before).length, 2);
 		await writeFile(target, original.replace(before, after));
