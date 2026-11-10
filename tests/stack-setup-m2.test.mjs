@@ -300,3 +300,12 @@ test("cli: --confirm with --no-save is refused, so state always records changes"
 	await assert.rejects(run(dir, ["teardown", "--confirm", "--no-save"], healthyWorld()), /--no-save can't be used with --confirm/);
 	await assert.rejects(run(dir, ["apply", "--confirm", "--no-save"], healthyWorld()), /--no-save can't be used with --confirm/);
 });
+
+test("cli: runs when started through a symlink, as an installed skill is", async () => {
+	const dir = await mkdtemp(join(tmpdir(), "stack-link-"));
+	const { symlink } = await import("node:fs/promises");
+	await symlink(resolve("skills/stack-setup"), join(dir, "stack-setup"));
+	const r = spawnSync(process.execPath, [join(dir, "stack-setup", "scripts", "stack.mjs"), "--help"], { encoding: "utf8" });
+	assert.equal(r.status, 0, r.stderr);
+	assert.match(r.stdout, /^stack <command>/);
+});
