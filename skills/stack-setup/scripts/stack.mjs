@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { readFile, writeFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
@@ -163,7 +163,15 @@ export async function main(argv, { adapters = builtIn, out = process.stdout, cwd
 	return code;
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href)
+// Resolve symlinks: the skill is usually linked into ~/.claude/skills.
+const invokedAs = (path) => {
+	try {
+		return pathToFileURL(realpathSync(path)).href;
+	} catch {
+		return null;
+	}
+};
+if (process.argv[1] && import.meta.url === invokedAs(process.argv[1]))
 	main(process.argv.slice(2)).then(
 		(code) => process.exit(code),
 		(error) => {
