@@ -233,7 +233,18 @@ export async function main(argv, { adapters = builtIn, out = process.stdout, cwd
 			if (command === "plan") return pending.length ? 10 : shown.some((s) => s.kind === "blocked") ? 2 : 0;
 			return pending.length ? 10 : 0;
 		}
-		const result = await apply(ctx, shown, { acceptCost: values["accept-cost"] });
+		let result = await apply(ctx, shown, { acceptCost: values["accept-cost"] });
+		// A step that changes what the agent can reach (a new token) is followed by one
+		// more plan, so steps that needed it happen in the same run, still as planned work.
+		// Up to 4 rounds: e.g. mint a token, use it to switch on a feature, then mint a
+		// narrower token once that feature no longer needs the extra permission.
+		for (let round = 1, last = result.done; round < 4 && !result.failed && !result.waiting && last.some((s) => s.replan); round++) {
+			const again = (await plan(ctx, adapters, { mirrors: command === "sync", waitMinutes })).filter((s) => CHANGES.includes(s.kind));
+			if (!again.length) break;
+			const next = await apply(ctx, again, { acceptCost: values["accept-cost"] });
+			result = { ...next, done: [...result.done, ...next.done] };
+			last = next.done;
+		}
 		const markdown = applyMarkdown(stack, result, at);
 		print({ done: result.done.map(({ run, ...s }) => s), waiting: result.waiting && strip(result.waiting), failed: result.failed && strip(result.failed) }, markdown);
 		if (values.report) await writeFile(resolve(cwd, values.report), markdown);

@@ -114,7 +114,7 @@ export async function agentSteps(ctx, name, cap) {
 			summary: `IAM user ${user} for the agent (no console password, no admin rights)`,
 			run: async () => {
 				const made = await ctx.call("aws", admin(cap, ["iam", "create-user", "--user-name", user, "--tags", `Key=${TAG},Value=${ctx.stack.app}`]));
-				recordCreated(ctx, `aws.agent.${user}`, "aws-ec2-docker", { name: user, arn: made.User?.Arn ?? null, profile: cap.agent.profile });
+				recordCreated(ctx, `aws.agent.${user}`, "aws-ec2-docker", { name: user, arn: made.User?.Arn ?? null, profile: cap.agent.profile, credential: true });
 			},
 		});
 	steps.push(...(await policySteps(ctx, name, cap, { account: who.Account, user, policy, userExists: exists.code === 0 })));
@@ -147,7 +147,7 @@ async function policySteps(ctx, name, cap, { account, user, policy, userExists }
 			summary,
 			run: async () => {
 				await ctx.call("aws", admin(cap, ["iam", "create-policy", "--policy-name", policyName(ctx.stack), "--policy-document", JSON.stringify(policy), "--tags", `Key=${TAG},Value=${ctx.stack.app}`]));
-				recordCreated(ctx, `aws.agent-policy.${policyName(ctx.stack)}`, "aws-ec2-docker", { name: policyName(ctx.stack), arn, user });
+				recordCreated(ctx, `aws.agent-policy.${policyName(ctx.stack)}`, "aws-ec2-docker", { name: policyName(ctx.stack), arn, user, credential: true });
 			},
 		});
 	else {
@@ -184,7 +184,7 @@ async function policySteps(ctx, name, cap, { account, user, policy, userExists }
 // State keeps only the key's last four characters: AWS key IDs look like
 // credentials to the guard, and AWS lists the user's keys whenever we need them.
 function recordKey(ctx, cap, user, id) {
-	recordCreated(ctx, `aws.agent-key.${user}`, "aws-ec2-docker", { name: `${user} access key`, user, profile: cap.agent.profile, keyEnding: id.slice(-4) });
+	recordCreated(ctx, `aws.agent-key.${user}`, "aws-ec2-docker", { name: `${user} access key`, user, profile: cap.agent.profile, keyEnding: id.slice(-4), credential: true });
 }
 
 export async function writeAgentKey(ctx, cap, key) {

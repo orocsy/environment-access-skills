@@ -3,7 +3,7 @@ import { basename, join } from "node:path";
 import { homedir } from "node:os";
 import { expandHome } from "./context.mjs";
 import { envNames, envValue, updateEnv } from "./envfile.mjs";
-import { readStore, writeStore } from "./stores.mjs";
+import { assertPrivateLocation, readStore, writeStore } from "./stores.mjs";
 import { hostShell } from "../adapters/aws-ec2-docker.mjs";
 import { setSecret } from "../adapters/github.mjs";
 
@@ -56,10 +56,18 @@ export function parseHandoff(text, wanted) {
 	return picked;
 }
 
+async function writeLocal(ctx, path, values) {
+	await assertPrivateLocation(ctx, path);
+	const before = await ctx.readText(path).catch(() => "");
+	await ctx.writeSecretFile(path, updateEnv(before, values));
+	return { names: Object.keys(values), mirrors: [], reloaded: false, local: path };
+}
+
 export async function pickup(ctx, gate, file) {
 	if (!gate.receive?.length) throw new Error(`${gate.id} doesn't receive any values`);
 	const values = parseHandoff(await ctx.readText(file), gate.receive);
-	const result = await storeAndSpread(ctx, values);
+	// Some values are for the agent on this computer only (a bootstrap token), not the app's store.
+	const result = gate.pickupTo ? await writeLocal(ctx, gate.pickupTo, values) : await storeAndSpread(ctx, values);
 	// The plain copy has done its job; the Trash keeps it recoverable for a while.
 	const full = expandHome(file);
 	const trashed = join(homedir(), ".Trash", `${Date.now()}-${basename(full)}`);
