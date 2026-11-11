@@ -71,6 +71,7 @@ Some steps send an email that someone has to open: a forwarding destination to c
 ## Milestones (to approve)
 
 1. **O1:** the Cloudflare bootstrap token and token minting; email forwarding (Email Routing rules) as a capability. This also finishes WiggleTrail's `support@` forwarding.
+   - Built 12 Nov 2026, in #8. WiggleTrail's `support@` forwarding was already live, so it's now checked (green) rather than rebuilt. Minting waits on the owner's one bootstrap token.
 2. **O2:** `environments: [sandbox, live]` in one stack file; Stripe live mode through the same adapter; a go-live gate bundle.
 3. **O3:** the agent inbox: Resend receiving, a `wait-for-email` step kind, and confirmation links followed only for approved steps.
 4. **O4:** a Stripe Projects adapter for the providers it covers, after checking what an Australian account can use.
