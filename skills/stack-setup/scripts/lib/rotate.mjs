@@ -49,6 +49,8 @@ export function parseHandoff(text, wanted) {
 		const client = data.web ?? data.installed;
 		if (client?.client_id) values = { GOOGLE_CLIENT_ID: client.client_id, GOOGLE_CLIENT_SECRET: client.client_secret };
 		else values = data;
+	} else if (wanted.length === 1 && !/[\r\n]/.test(trimmed) && !envNames(trimmed).length) {
+		values[wanted[0]] = trimmed; // a bare value, as secure-key-handoff's receive writes it
 	} else for (const name of envNames(trimmed)) values[name] = envValue(trimmed, name);
 	const picked = Object.fromEntries(wanted.filter((n) => typeof values[n] === "string" && values[n]).map((n) => [n, values[n]]));
 	const missing = wanted.filter((n) => !(n in picked));

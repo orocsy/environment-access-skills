@@ -17,8 +17,10 @@ export function parseSpan(text) {
 // adapter wrote them in, so the route reads top to bottom.
 function ordered(gates) {
 	const ids = new Set(gates.map((g) => g.id));
-	const rank = (g) => [g.seq ?? Number.MAX_SAFE_INTEGER, g.id];
-	const cmp = (a, b) => rank(a)[0] - rank(b)[0] || rank(a)[1].localeCompare(rank(b)[1]);
+	// Pack order first; otherwise sign-ins before app steps before go-live steps.
+	const BUNDLES = ["preflight", "app", "go-live"];
+	const bundle = (g) => (BUNDLES.includes(g.bundle) ? BUNDLES.indexOf(g.bundle) : BUNDLES.length);
+	const cmp = (a, b) => (a.seq ?? Number.MAX_SAFE_INTEGER) - (b.seq ?? Number.MAX_SAFE_INTEGER) || bundle(a) - bundle(b) || a.id.localeCompare(b.id);
 	const pending = new Map(gates.map((g) => [g.id, (g.after ?? []).filter((id) => ids.has(id)).length]));
 	const out = [];
 	const free = gates.filter((g) => pending.get(g.id) === 0).sort(cmp);

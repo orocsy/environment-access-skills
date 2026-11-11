@@ -103,7 +103,13 @@ const admin = (cap, args) => [...args, "--profile", cap.profile, "--output", "js
 
 export async function agentSteps(ctx, name, cap) {
 	const user = agentUser(ctx.stack);
-	const who = await ctx.json("aws", admin(cap, ["sts", "get-caller-identity"]), { gate: "aws.login" });
+	const who = await ctx.json("aws", admin(cap, ["sts", "get-caller-identity"]), { gate: "aws.login" }).catch(async (error) => {
+		// The owner's 12-hour sign-in has lapsed, which is the normal state once the
+		// agent has its key: checking the agent's own permissions waits for the next sign-in.
+		if (error?.gate === "aws.login" && (await hasAgentCredentials(ctx, cap))) return null;
+		throw error;
+	});
+	if (!who) return [{ id: `${name}.agent`, kind: "noop", summary: `agent key in use (${cap.agent.profile}); its permissions are checked the next time you sign in to AWS` }];
 	const policy = agentPolicy({ account: who.Account, region: cap.region, app: ctx.stack.app, user });
 	const exists = await ctx.run("aws", admin(cap, ["iam", "get-user", "--user-name", user]));
 	const steps = [];

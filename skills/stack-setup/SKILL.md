@@ -45,7 +45,8 @@ Exit codes: `0` done or all green, `1` something is red or failed, `2` something
 
 | Provider | Creates | Mints | Syncs |
 |---|---|---|---|
-| `cloudflare` | DNS records other adapters ask for; the CNAME to a tunnel | | |
+| `cloudflare` | DNS records other adapters ask for; the CNAME to a tunnel | with `bootstrap_token_file`: its own token, holding exactly what the stack needs, scoped to the zone and account; re-minted when the stack changes, with the old one revoked | |
+| `cloudflare-email-routing` | Email Routing on the domain, forwarding addresses, rules (`routes: { support: you@… }`) | | |
 | `resend` | the sending domain, its DNS records (through the DNS capability), then verification | a send-only key for that domain only | `EMAIL_FROM` |
 | `vercel` | config env values (`value:` or `from: <capability>.url`) | | corrects values that differ |
 | `github` | | | the whole store into each `github-secret` mirror |
@@ -56,6 +57,17 @@ Exit codes: `0` done or all green, `1` something is red or failed, `2` something
 `rotate` works for every minted value: `RESEND_API_KEY`, each Stripe `secret_env`, and `agent-key`. It always makes the new one, writes the store and mirrors, and reloads the app. Only then does it revoke the old one. Without `reload:` on a server-env store it keeps the old one and tells you to revoke it after the next deploy.
 
 Values only a person can get go through `gates pickup`: Google's client JSON (`google.client`), or a KEY=value file from `secure-key-handoff` (for example `stripe.restricted-key`). The file is moved to the Trash afterwards.
+
+### The Cloudflare bootstrap token
+
+Add `bootstrap_token_file:` to the Cloudflare capability. The owner then creates one token from Cloudflare's "Create additional tokens" template and hands it back (`gates pickup cloudflare.bootstrap`). It's kept only on this computer, at 0600.
+
+From then on the agent:
+- mints its own token with exactly the permissions the stack needs, limited to the app's zone and account;
+- replaces that token, and revokes the old one, whenever the stack needs more or less;
+- borrows a one-off token for rare jobs its own token deliberately lacks, then revokes it.
+
+`apply` plans again after a step that changes access, so one run can mint, use, then narrow the token.
 
 ### The AWS agent key
 
