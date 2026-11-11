@@ -108,6 +108,7 @@ The rules:
 - **Up-front questions** (`stack guide ask`), answered once under `profile:`.
 - **Warnings** for providers that don't serve mainland users: Google sign-in, Stripe, Vercel, Cloudflare, Resend, AWS.
 - **The guided route:**
+  - for a new business: plan the entity, ask a host, obtain address documents, register, confirm banking and tax obligations;
   - real-name checks;
   - the domain, and the filing server, bought just in time;
   - ICP filing with its 24-hour SMS;
@@ -119,7 +120,9 @@ The rules:
 
   Payments and data export show only when the answers need them.
 
-Business registration isn't covered. Design: [`docs/stack-setup/china-mainland.md`](../../docs/stack-setup/china-mainland.md).
+New business registration is guided when `subject` is `company` or `individual-business` and `registration` is `cluster-host` or `own-premises`. These are different legal routes; do not reuse company shareholder, bank or Apple-organisation requirements for an individual business. Read [Guangzhou registration and Nansha hosting](references/guangzhou-business-registration.md) before advising on this route.
+
+For address hosting, first show the inquiry draft for review. Send it only if the owner explicitly asks. Prefer a government-backed address-only service; do not assume a project pitch or incubation application. Keep `cn.biz.host.inquiry` open until the written eligibility, fee and materials reply arrives. Keep `cn.biz.host` open until the owner has approved the offer and obtained valid address-use documents. A message sent, a local test or a manually completed demo step is not a real registration approval. Do not open a new browser session unless needed and authorised.
 
 ## Skills and tools a stack needs
 

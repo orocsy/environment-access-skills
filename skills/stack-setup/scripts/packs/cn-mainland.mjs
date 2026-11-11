@@ -1,11 +1,11 @@
 // China mainland compliance pack: the interview, checks for providers that
 // don't work for mainland users, and the guided steps for an individual or a
 // business to put a site, an API and an app online legally.
-// Business registration itself is out of scope (owner's decision, 10 Nov 2026).
+// Registration steps guide the owner; they do not submit an application or pay a host.
 // Facts come from the linked pages, checked on the date beside them. Not legal advice.
 
 const CHECKED = "2026-11-10";
-const src = (url) => ({ url, checked: CHECKED });
+const src = (url, checked = CHECKED) => ({ url, checked });
 const TENCENT_FILE = src("https://cloud.tencent.com/document/product/243/19628");
 const TENCENT_FIRST = src("https://cloud.tencent.com/document/product/243/97668");
 const TENCENT_OVERVIEW = src("https://cloud.tencent.com/document/product/243/18907");
@@ -14,9 +14,9 @@ const POLICE = src("https://help.aliyun.com/document_detail/36981.html");
 const APP_FILING = src("https://ithome.com/0/711/106.htm");
 
 export const INTERVIEW = [
-	{ key: "subject", question: "Who files?", options: ["mainland-person", "foreign-person", "individual-business", "company"], note: "A person needs no business registration; payments by merchant account need a business." },
+	{ key: "subject", question: "Who files?", options: ["mainland-person", "foreign-person", "individual-business", "company"], note: "Choose the actual filing subject. Payment onboarding depends on the product and merchant category; a personal login alone does not establish eligibility." },
 	{ key: "province", question: "Which province is the filer registered in (ID card or business licence)?", note: "Rules differ slightly by province, e.g. guangdong, shanghai, beijing." },
-	{ key: "registration", question: "For a business: register it at an approved hosted address (集群注册), at premises you have, or is it already registered?", options: ["cluster-host", "own-premises", "registered"], when: (p) => business(p), note: "cluster-host keeps your home address out of it: an incubator, park or business-secretary company approved by the district bureau." },
+	{ key: "registration", question: "For a business: register it at an approved hosted address (集群注册), at premises you have, or is it already registered?", options: ["cluster-host", "own-premises", "registered"], when: (p) => business(p), note: "A qualified host supplies the registered business address. Identity and contact documents are still required; hosting does not promise personal anonymity." },
 	{ key: "city", question: "For a business: which city and district will it register in?", when: (p) => business(p) && p.registration !== "registered", note: "e.g. guangzhou-nansha; the district decides which hosts are approved." },
 	{ key: "forms", question: "What goes online?", options: ["website", "api", "ios-app", "android-app", "mini-program"], many: true },
 	{ key: "commercial", question: "Will it take payments or sell anything online?", options: [true, false] },
@@ -43,12 +43,20 @@ const kind = (p) => (p.subject === "company" ? "one-person limited company (一�
 const GD_PORTAL = src("https://www.gdzwfw.gov.cn");
 const NANSHA_OPC = src("http://www.gzns.gov.cn/zwgk/rdzt/OPC/OPCYLS/content/post_10745016.html");
 const CLUSTER_RULES = src("https://www.gz.gov.cn/gzzcwjk/gzdata/content/post_10068139.html");
+const NANSHA_RULES = src("https://www.gzns.gov.cn/zwgk/zcwjjjd/zcwj/content/post_10068270.html", "2026-11-11");
+const NANSHA_WECHAT = src("https://www.nstfhg.com/index/Article/detail.html?cate=5&id=876", "2026-11-11");
+const TENCENT_AUTH = src("https://cloud.tencent.com/document/api/378/10496", "2026-11-11");
+const WECHAT_SETTLEMENT = src("https://pay.wechatpay.cn/doc/v3/partner/4012760618", "2026-11-11");
+const APPLE_ENTITY = src("https://developer.apple.com/help/account/membership/D-U-N-S", "2026-11-11");
+const BENEFICIAL_OWNER = src("https://tianjin.pbc.gov.cn/fzhtianjin/113733/5424470/5492278/2024103016524665832.pdf", "2026-11-11");
+const HOST_MESSAGE = "您好，我想在南沙办理注册地址托管，经营范围是软件开发、网站及App开发、AI应用和自动化技术服务，只购买地址托管，不申请项目孵化。请问个体工商户和一个自然人股东的有限责任公司目前是否都接受新申请？首年及续年全部费用分别是多少，托管期限多久，需要哪些材料，是否必须绑定代理记账？烦请发申请指南、收费表和合同范本，我暂不方便电话，请文字回复，谢谢。";
 
-// Registering the business, when the answers say it doesn't exist yet. Kept to
-// the route the owner chose: an approved hosted address, never the home.
+// Keep the two entity types separate and follow the owner's selected address route.
 function businessGates(p) {
 	if (!forming(p)) return [];
 	const hosted = p.registration === "cluster-host";
+	const company = p.subject === "company";
+	const nansha = p.city === "guangzhou-nansha";
 	return [
 		{
 			id: "cn.biz.plan",
@@ -58,14 +66,34 @@ function businessGates(p) {
 			who: "agent drafts; you approve",
 			title: `Plan the ${kind(p)}`,
 			steps: [
-				"Three name choices in the form 城市 + 字号 + 行业 + 组织形式 (e.g. 广州某某科技有限公司), checked against the portal's name search",
-				"Business scope (经营范围) from the standard catalogue for software work: 软件开发, 信息技术咨询服务, 信息系统集成服务, 技术服务 — and nothing that needs a prior licence",
-				p.subject === "company" ? "Registered capital: a modest pledged amount (认缴); under the 2024 Company Law it must be paid in within 5 years" : "No registered capital for an individual business",
-				"You are shareholder, executive director and legal representative; a supervisor or the 'no supervisor' option as the portal allows",
+				company ? "Prepare three company names (e.g. 广州某某科技有限公司) and check the portal's name search" : "Prepare three individual-business names using the portal's industry wording and organisation suffix; do not choose 有限公司",
+				"Select actual work from the standard scope catalogue: 软件开发, 人工智能应用软件开发, 软件外包服务, 信息技术咨询服务 and the relevant 技术服务 entry; adding AI wording alone does not qualify for a subsidy",
+				company ? "Choose registered capital you can actually contribute; a newly formed limited company normally pays the subscribed amount within 5 years under its articles" : "An individual business has no company registered capital; fill any 资金数额 field truthfully as business funds",
+				company ? "Record the natural-person shareholder, legal representative and director; select the supervisor arrangement allowed by the law and portal" : "Record the 经营者 and whether it is personal or family operation; there are no company shareholders or directors",
 			],
 			takes: "an hour of the agent's time, then your review",
-			note: "Limited liability holds only if company and personal money stay apart: a separate bank account, every payment through it.",
+			note: company ? "Keep company assets and records separate from personal assets. A sole shareholder must be able to prove that separation; a bank account alone does not establish it. See references/guangzhou-business-registration.md for expenses, distributions and closing." : "An individual business is not a limited company. Personal operation generally carries liability against personal assets; business records are still required.",
 		},
+		hosted
+			? {
+					id: "cn.biz.host.inquiry",
+					track: "business",
+					bundle: "preflight",
+					type: "console",
+					who: "you send the prepared message",
+					title: "Ask a government-backed host for written eligibility, fees and documents",
+					where: nansha ? "WeChat: 广州南沙投资咨询有限公司; check the account's certified operator and ask for 集群注册/住所托管 service" : `the published online contact for a government-backed host or the district's registration service${p.city ? ` in ${p.city}` : ""}`,
+					after: ["cn.biz.plan"],
+					steps: [
+						"Send the draft yourself after review. This asks about address hosting only; no specific project, pitch or incubation application is needed in the inquiry",
+						"Request a written reply covering new applicants of BOTH entity types, first-year and renewal totals, hosting term, required documents and any bundled bookkeeping",
+						"Mark this inquiry done when the written reply is received and recorded, not merely when the message has been sent; unresolved eligibility or price stays open",
+					],
+					prefill: { message: nansha ? HOST_MESSAGE : "您好，我想办理注册地址托管，只购买地址服务，不申请项目孵化。请问个体工商户和一个自然人股东的有限责任公司目前是否接受新申请？首年、续年全部费用、托管期限和材料分别是什么？是否绑定代理记账？请发申请指南、收费表和合同范本，烦请文字回复，谢谢。" },
+					note: "No current new-applicant price or admission confirmation has been obtained. Government backing does not establish free or permanent hosting. Do not open a new browser or send a message without the owner's instruction.",
+					sources: nansha ? [NANSHA_RULES, NANSHA_WECHAT] : [CLUSTER_RULES],
+				}
+			: null,
 		hosted
 			? {
 					id: "cn.biz.host",
@@ -74,23 +102,23 @@ function businessGates(p) {
 					type: "console",
 					who: "you",
 					title: "Choose an approved hosted address (集群注册) in the district",
-					where: `the district's market-regulation bureau (市场监督管理局) or government service centre (政务服务中心)${p.city ? ` for ${p.city}` : ""}`,
-					after: ["cn.biz.plan"],
+					where: "the host's written reply and hosting agreement; use the bureau's published online enquiry if qualification remains unclear",
+					after: ["cn.biz.host.inquiry"],
 					steps: [
-						"Phone or visit and ask: 请问本区有哪些备案的集群注册托管机构？有没有面向一人公司/OPC 的免费或低价地址？",
-						"Prefer a government-backed incubator or OPC community; ask for a yearly or one-off fee, not monthly rent",
-						"Before paying, check the host: on the bureau's list; on gsxt.gov.cn for years in business, no violations, few abnormal firms at its address",
-						"Ask: will banks' on-site checks be supported at this address? Has it worked for ICP filing and WeChat Pay/Alipay?",
-						"Sign the 住所托管协议 with every yearly fee written in; get the host's proof of approval",
+						"Prefer the government-backed address-only offer. Consider a private host only if that route cannot meet the requirements; project screening or interviews require a new decision",
+						"Verify the contracting entity and its qualification for the exact address and chosen entity type with the registration authority; a website advert or a business licence alone does not prove this",
+						"Record first-year and renewal totals, term, deposit, refund/rejection terms, exit/address-change costs, mail handling and any required bookkeeping. A one-off payment can cover a fixed term; it does not mean permanent hosting",
+						"Confirm what the host actually supports for bank checks, receiving official notices and merchant/address checks; a registered address alone does not guarantee bank, ICP or payment approval",
+						"Before completing this step, obtain the valid hosting agreement, address-use consent and the required address evidence; the owner approves any fee and signs. Register with the exact address in those documents",
 					],
-					documents: ["your ID", "the name choices and scope from the plan"],
-					takes: "a few days to compare two hosts",
-					cost: "the host's fee, written in the contract (yearly or one-off)",
+					documents: ["the host's current written eligibility and materials list", "identity documents supplied privately through its verified channel", "the approved names and scope", "the host's address-use documents"],
+					takes: "depends on the host's written reply and document processing",
+					cost: "only the itemised quote approved by the owner; first-year and renewal fees remain unconfirmed",
 					faq: [
-						{ q: "A Xiaohongshu agent offers a free address with no checks", a: "Walk away: unregistered addresses are rejected or end up on the abnormal-operations list (经营异常名录)." },
-						{ q: "Is there a free government address?", a: "Some districts' OPC programmes subsidise addresses for new one-person companies; ask the district, the conditions vary." },
+						{ q: "A social-media agent offers a free address", a: "An advert is a lead, not proof. Verify the actual host, address permission, contract term and full fees before paying or uploading identity documents." },
+						{ q: "Does Nansha's old free-three-year offer cover a new applicant?", a: "Do not assume so. Article 29 of the 2025 rules describes a transition for previously registered businesses; obtain a current new-applicant quote for the chosen entity type." },
 					],
-					sources: [CLUSTER_RULES, NANSHA_OPC],
+					sources: nansha ? [NANSHA_RULES, NANSHA_WECHAT] : [CLUSTER_RULES],
 				}
 			: null,
 		{
@@ -100,17 +128,18 @@ function businessGates(p) {
 			type: "identity",
 			who: "you",
 			title: `Register the ${kind(p)} online`,
-			where: "广东政务服务网 → 企业开办 一网通办 (Guangzhou also has an OPC 开办一类事 section)",
+			where: company ? "广东政务服务网 → 企业开办 一网通办; Guangzhou has an OPC 开办一类事 section" : "广州市市场主体直通车 → 我要办 → 个体设立 (not the company-opening form)",
 			after: hosted ? ["cn.biz.host"] : ["cn.biz.plan"],
 			steps: [
 				"Name self-declaration (名称自主申报) with the first available name",
-				"Fill the registration with the plan's scope and capital; address = the host's address and its documents",
+				company ? "Fill the approved scope, shareholder, capital and articles" : "Fill the approved scope, operator and personal/family operation; do not fill company shareholder or registered-capital fields",
+				hosted ? "Use the exact address and address-use documents supplied by the host, with no added spaces or omissions" : "Use the actual premises and the address-use evidence required locally; residential property may need additional site proof",
 				"Electronic signature and face check on your phone",
 				"Download the electronic business licence; order the seals through the same service if offered",
-				"Beneficial-owner filing (受益所有人备案) is part of the online form",
+				company ? "Check beneficial-owner filing (受益所有人备案); a small all-natural-person company may qualify for a declaration exemption only if all official conditions hold" : "Individual businesses do not file beneficial-owner information (受益所有人备案)",
 			],
 			takes: "often the same day to a few working days (Nansha advertises same-day licences for one-person companies)",
-			sources: [GD_PORTAL, NANSHA_OPC],
+			sources: [GD_PORTAL, NANSHA_OPC, BENEFICIAL_OWNER],
 		},
 		{
 			id: "cn.biz.bank",
@@ -118,33 +147,37 @@ function businessGates(p) {
 			bundle: "preflight",
 			type: "identity",
 			who: "you",
-			title: "Open the business bank account (基本存款账户)",
-			where: "a bank branch you choose (most need the legal representative in person)",
+			title: company ? "Open the company bank account (基本存款账户)" : "Confirm the individual business's settlement account requirements",
+			where: company ? "the bank's published application channel; ask which steps require the legal representative in person" : "the chosen payment product's official onboarding rules; the bank if a business account is required",
 			after: ["cn.biz.register"],
 			steps: [
-				"Book an appointment; bring the licence, your ID, the seals and the host's address documents",
+				company ? "Obtain the bank's material list and fees; prepare the licence, ID, seals and address documents" : "WeChat Pay accepts the operator's own personal account or a business account for an individual business; confirm the particular Alipay product separately",
 				"The bank may check the registered address; tell the host in advance",
-				"Set up online banking, then the tax authority's three-party agreement (三方协议) so taxes can be paid from the account",
+				"If opening an account, set up online banking and the tax-payment arrangement supported by the tax bureau; record the actual settlement-account holder",
 			],
 			takes: "1–7 working days, depending on the bank",
-			note: "Every business payment in and out goes through this account. Keep personal spending off it.",
+			note: company ? "Use the company account for business receipts and payments and keep clear records. Genuine shareholder advances and reimbursements need supporting evidence; personal expenses are not company costs." : "Do not order a company bank account automatically. Keep business income and costs traceable even when the product accepts the operator's personal account.",
+			sources: [WECHAT_SETTLEMENT],
 		},
 		{
 			id: "cn.biz.tax",
 			track: "business",
 			bundle: "preflight",
 			type: "console",
-			who: "you, then a bookkeeper (代账)",
-			title: "Tax setup and a bookkeeper",
+			who: "you, with an accountant if needed",
+			title: "Confirm tax setup, records and filing dates",
 			where: "the provincial electronic tax bureau (电子税务局)",
 			after: ["cn.biz.register"],
 			steps: [
-				"Log in as the business, confirm the tax registration details and the taxpayer type (small-scale 小规模纳税人 is usual)",
-				"Hire a bookkeeper; filings are due even with no income (零申报)",
-				"Diary: monthly or quarterly filings by the 15th, and the annual report (年报) between 1 January and 30 June every year",
+				"Log in as the business and confirm its registered taxes, taxpayer type and assigned filing periods; do not infer them from having no revenue",
+				"Arrange accurate records and required returns yourself or through a qualified bookkeeping service; paid outsourcing is optional. No sales does not automatically mean every return is zero",
+				"Use the tax bureau's calendar for actual monthly/quarterly due dates and holiday adjustments; do not hard-code the 15th for every return",
+				company ? "For a calendar-year company, the annual corporate-income-tax settlement normally runs through the end of May; confirm the applicable notice" : "For the operator's business income, annual settlement is normally due by 31 March of the following year; confirm the applicable notice",
+				"The market-regulation annual report (年报), normally 1 January to 30 June, is a separate obligation from tax returns",
 			],
-			takes: "an hour, plus choosing a bookkeeper",
-			cost: "the bookkeeper's monthly fee",
+			takes: "depends on the tax setup and who keeps the books",
+			note: "Business AI subscriptions can be costs with the required evidence; this is not a deduction from the owner's personal comprehensive income. Profit distributions and liquidation have separate tax treatment. Read references/guangzhou-business-registration.md.",
+			sources: [src("https://tianjin.chinatax.gov.cn/11200000000/0300/030005/p20240202103825878.shtml", "2026-11-11"), src("https://tianjin.chinatax.gov.cn/11200000000/0300/030005/20210209163048703.shtml", "2026-11-11")],
 		},
 	].filter(Boolean);
 }
@@ -478,17 +511,18 @@ export function gates(stack) {
 					steps: business(p)
 						? [
 								"WeChat Pay merchant platform → 接入微信支付 as the business; Alipay merchant centre → 入驻 as the business",
-								"Settlement account: the business bank account",
+								p.subject === "company" ? "Company settlement uses the company bank account" : "For WeChat Pay, an individual business may use the operator's personal account or a business account; verify the Alipay product's account rules separately",
 								"The app's filed domain and the iOS app's name are asked for, so this comes after the filing",
 								"The agent wires the API keys and certificates through secure-key-handoff, then the payment callbacks",
 								has(p, "ios-app") ? "Digital services bought inside the iOS app still go through Apple's in-app purchase" : "",
 							].filter(Boolean)
 						: [
-								"A person (no business) can't open a WeChat Pay or Alipay merchant account; those need an individual business (个体工商户) or a company",
+								"Check the specific product's merchant-category requirements; a personal login or micro-merchant route does not establish eligibility for website/API payment collection",
 								has(p, "ios-app") ? "In the iOS app, digital services can be sold through Apple's in-app purchase under your developer account" : "Look at platforms that collect on your behalf",
 								"Set subject to company or individual-business in profile: to add the registration steps",
 							],
 					needs: "adviser: whether selling online needs a commercial licence (B25) for your service",
+					sources: [WECHAT_SETTLEMENT],
 				}
 			: null,
 		p.data_leaves_mainland
@@ -507,20 +541,26 @@ export function gates(stack) {
 	];
 	const all = [...businessGates(p), ...list.filter(Boolean)];
 	if (forming(p)) {
-		// A business verifies its Tencent account through a payment to its own bank account,
-		// and real-names the domain with the licence, so both wait for the business to exist.
+		// Tencent also accepts legal-representative verification; a bank account is not
+		// a universal prerequisite. The licence must exist before business verification.
 		const account = all.find((g) => g.id === "cn.account.realname");
-		account.after = [...(account.after ?? []), "cn.biz.bank"];
+		account.after = [...(account.after ?? []), "cn.biz.register"];
+		account.steps[1] = "企业认证: follow the options offered for this subject, including legal-representative WeChat/face verification; use bank-transfer verification only if selected or required";
+		account.sources = [...account.sources, TENCENT_AUTH];
 		const apple = all.find((g) => g.id === "apple.developer");
-		if (apple) {
+		if (apple && p.subject === "company") {
 			// The app is published under the business, so Apple enrolment is as an organisation, after registration.
 			apple.after = [...(apple.after ?? []), "cn.biz.register"];
 			apple.title = "Enrol in the Apple Developer Program as an organisation (the business)";
 			apple.steps = [
 				"Look up or request the business's D-U-N-S number with Apple's free lookup tool (a new one can take several days)",
 				"developer.apple.com → Enroll → Organization, with the business's legal name exactly as on the licence",
-				"Pay the yearly fee from the business account; then the agent creates the bundle ID and distribution certificate",
+				"Check the organisation's actual eligibility and current Apple requirements before paying; then the agent creates the bundle ID and distribution certificate",
 			];
+			apple.sources = [...(apple.sources ?? []), APPLE_ENTITY];
+		} else if (apple) {
+			apple.note = "A sole proprietor/individual business enrols with Apple as an individual, not an organisation. Apple may display the individual's legal name; confirm this before payment.";
+			apple.sources = [...(apple.sources ?? []), APPLE_ENTITY];
 		}
 		const domain = all.find((g) => g.id === "cn.domain.register");
 		if (domain) domain.after = [...(domain.after ?? []), "cn.biz.register"]; // bought in the business's name

@@ -9,6 +9,7 @@ import { adapters } from "../skills/stack-setup/scripts/adapters/index.mjs";
 import { parseSpan, route } from "../skills/stack-setup/scripts/lib/guide.mjs";
 import { main } from "../skills/stack-setup/scripts/stack.mjs";
 import { healthyWorld, overridesFor } from "./stack-setup/world.mjs";
+import { gates as chinaGates } from "../skills/stack-setup/scripts/packs/cn-mainland.mjs";
 
 // A synthetic app shaped like a phone-sign-in family app with an iOS client.
 const CN = `app: family-cn
@@ -154,7 +155,7 @@ test("guide all: tracks, money, deadlines and adviser flags in one view; payment
 	assert.match(withPay.out, /Decide how to take payments — you ⚖/);
 	const step = parseYaml(CN.replace("commercial: false", "commercial: true"));
 	const { gates } = await import("../skills/stack-setup/scripts/packs/cn-mainland.mjs");
-	assert.match(gates(step).find((g) => g.id === "cn.payments").steps[0], /A person \(no business\) can't open a WeChat Pay or Alipay merchant account/);
+	assert.match(gates(step).find((g) => g.id === "cn.payments").steps[0], /specific product's merchant-category requirements/);
 });
 
 test("doctor: lists the agent skills and tools a stack needs, installed or not", async () => {
@@ -213,17 +214,59 @@ test("business track: a one-person company at a hosted address comes first, and 
 	const { out } = await run(dir, ["guide", "all"]);
 	assert.match(out, /^## Route for family-cn: 0 of \d+ done\n\n### business\n/);
 	assert.match(out, /Plan the one-person limited company \(一人有限责任公司\)/);
-	assert.match(out, /Choose an approved hosted address \(集群注册\) in the district — you, a few days to compare two hosts 💲/);
-	assert.match(out, /Real-name verify your Tencent Cloud account as a business .* · after cn\.biz\.bank/);
+	assert.match(out, /Choose an approved hosted address \(集群注册\) in the district — you, .* 💲.* · after cn\.biz\.host\.inquiry/);
+	assert.match(out, /Real-name verify your Tencent Cloud account as a business .* · after cn\.biz\.register/);
 	assert.match(out, /Buy family-example\.cn at Tencent Domains .* · after cn\.biz\.register/);
 	assert.match(out, /Open WeChat Pay and Alipay merchant accounts — you.* · after cn\.biz\.bank, cn\.filing\.review/);
 	const first = await run(dir, ["guide"]);
 	assert.match(first.out, /Plan the one-person limited company/, "the agent's plan is the only thing ready at the start");
 	await run(dir, ["guide", "done", "cn.biz.plan"]);
+	const inquiry = await run(dir, ["guide"]);
+	assert.match(inquiry.out, /Ask a government-backed host for written eligibility, fees and documents/);
+	assert.match(inquiry.out, /WeChat: 广州南沙投资咨询有限公司/);
+	assert.match(inquiry.out, /written reply is received.*not merely when the message has been sent/);
+	assert.match(inquiry.out, /not.*permanent hosting/);
+	const message = chinaGates(parseYaml(COMPANY)).find((g) => g.id === "cn.biz.host.inquiry").prefill.message;
+	for (const wording of ["个体工商户", "一个自然人股东的有限责任公司", "新申请", "首年及续年", "材料", "代理记账", "只购买地址托管，不申请项目孵化"]) assert.ok(message.includes(wording), wording);
+	assert.doesNotMatch(message, /\n|番禺|居住|商业计划|KidsBuddy|family-cn/);
+	assert.equal((await run(dir, ["guide"])).out, inquiry.out, "reading a draft does not complete the inquiry");
+	await markDone(dir, ["cn.biz.host.inquiry"]);
 	const host = await run(dir, ["guide"]);
 	assert.match(host.out, /Choose an approved hosted address \(集群注册\)/);
-	assert.match(host.out, /请问本区有哪些备案的集群注册托管机构/);
-	assert.match(host.out, /Walk away: unregistered addresses are rejected/);
+	assert.match(host.out, /valid hosting agreement, address-use consent/);
+	assert.match((await run(dir, ["guide", "all"])).out, /Register the one-person limited company .* · after cn\.biz\.host\n/, "a reply is not registration-ready address evidence");
+	await markDone(dir, ["cn.biz.host"]);
+	const register = await run(dir, ["guide"]);
+	assert.match(register.out, /Register the one-person limited company .* online/);
+	assert.match(register.out, /exemption only if all official conditions hold/);
+});
+
+test("business track: an individual business has an operator and product-specific settlement, not company or Apple organisation requirements", async () => {
+	const individual = COMPANY.replace("subject: company", "subject: individual-business");
+	const steps = chinaGates(parseYaml(individual));
+	const get = (id) => steps.find((g) => g.id === id);
+	assert.match(get("cn.biz.plan").steps.join("\n"), /经营者/);
+	assert.match(get("cn.biz.plan").note, /not a limited company/);
+	assert.match(get("cn.biz.register").where, /个体设立/);
+	assert.match(get("cn.biz.register").steps.join("\n"), /do not file beneficial-owner/);
+	assert.match(get("cn.biz.bank").steps.join("\n"), /operator's own personal account or a business account/);
+	assert.match(get("cn.payments").steps.join("\n"), /verify the Alipay product's account rules separately/);
+	assert.doesNotMatch(JSON.stringify(get("apple.developer")), /Enrol.*as an organisation|D-U-N-S number/);
+	assert.match(get("apple.developer").note, /Apple may display the individual's legal name/);
+	assert.deepEqual(get("cn.account.realname").after, ["cn.biz.register"]);
+	const dir = await workspace(individual);
+	await markDone(dir, ["cn.biz.plan", "cn.biz.host.inquiry", "cn.biz.host"]);
+	assert.match((await run(dir, ["guide"])).out, /Where: 广州市市场主体直通车 → 我要办 → 个体设立/);
+});
+
+test("business track: own premises can reach registration without a host inquiry", async () => {
+	const dir = await workspace(COMPANY.replace("registration: cluster-host", "registration: own-premises"));
+	const all = await run(dir, ["guide", "all"]);
+	assert.doesNotMatch(all.out, /Choose an approved hosted address|Ask a government-backed host/);
+	await markDone(dir, ["cn.biz.plan"]);
+	const register = await run(dir, ["guide"]);
+	assert.match(register.out, /Register the one-person limited company .* online/);
+	assert.match(register.out, /actual premises.*residential property may need additional site proof/);
 });
 
 test("business track: city is asked for a business being formed, not for a person", async () => {
