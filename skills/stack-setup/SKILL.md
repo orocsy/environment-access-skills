@@ -26,6 +26,8 @@ node $S import     # find what already exists, record IDs
 node $S verify     # green/red for every item
 node $S gates      # human steps still open
 node $S plan       # what apply would do
+node $S guide      # the owner's next step only, everything on one screen
+node $S guide all  # the whole route: tracks, waits, deadlines, what costs money
 
 node $S apply --confirm      # create what's missing, mint keys, write the store and mirrors
 node $S sync --confirm       # re-copy the store to its mirrors, correct config values
@@ -43,7 +45,8 @@ Exit codes: `0` done or all green, `1` something is red or failed, `2` something
 
 | Provider | Creates | Mints | Syncs |
 |---|---|---|---|
-| `cloudflare` | DNS records other adapters ask for; the CNAME to a tunnel | | |
+| `cloudflare` | DNS records other adapters ask for; the CNAME to a tunnel | with `bootstrap_token_file`: its own token, holding exactly what the stack needs, scoped to the zone and account; re-minted when the stack changes, with the old one revoked | |
+| `cloudflare-email-routing` | Email Routing on the domain, forwarding addresses, rules (`routes: { support: you@… }`) | | |
 | `resend` | the sending domain, its DNS records (through the DNS capability), then verification | a send-only key for that domain only | `EMAIL_FROM` |
 | `vercel` | config env values (`value:` or `from: <capability>.url`) | | corrects values that differ |
 | `github` | | | the whole store into each `github-secret` mirror |
@@ -54,6 +57,17 @@ Exit codes: `0` done or all green, `1` something is red or failed, `2` something
 `rotate` works for every minted value: `RESEND_API_KEY`, each Stripe `secret_env`, and `agent-key`. It always makes the new one, writes the store and mirrors, and reloads the app. Only then does it revoke the old one. Without `reload:` on a server-env store it keeps the old one and tells you to revoke it after the next deploy.
 
 Values only a person can get go through `gates pickup`: Google's client JSON (`google.client`), or a KEY=value file from `secure-key-handoff` (for example `stripe.restricted-key`). The file is moved to the Trash afterwards.
+
+### The Cloudflare bootstrap token
+
+Add `bootstrap_token_file: ~/.config/stack-setup/cloudflare-bootstrap.env` to the Cloudflare capability. That's the standard path: one starter token per computer, shared by every project on it, while each project gets its own agent token. The owner then creates one token from Cloudflare's "Create additional tokens" template and hands it back (`gates pickup cloudflare.bootstrap`). It's kept only on this computer, at 0600.
+
+From then on the agent:
+- mints its own token with exactly the permissions the stack needs, limited to the app's zone and account;
+- replaces that token, and revokes the old one, whenever the stack needs more or less;
+- borrows a one-off token for rare jobs its own token deliberately lacks, then revokes it.
+
+`apply` plans again after a step that changes access, so one run can mint, use, then narrow the token.
 
 ### The AWS agent key
 
@@ -84,6 +98,48 @@ It can't create users, change policies, touch untagged resources (such as a serv
 - **Nothing is minted unless its store can be written.** If the store can't be read, the key step is skipped.
 - **Money:** a step that costs money shows its price in the plan (💲), and `apply` refuses the whole run without `--accept-cost`. Nothing is half-built.
 
+## Guiding the owner
+
+When a person has steps to do, show them `stack guide` output, not a list of everything. Each step says:
+- who does it, and where;
+- the numbered actions, in the console's own words;
+- values to paste, and documents to have ready;
+- how long it takes, and any deadline;
+- common questions, and the sources it's based on (with the date each was checked).
+
+The rules:
+- **When they finish a step:** `stack guide done <id>`. Steps with a check close themselves on `verify`.
+- **When something goes wrong:** `stack guide stuck "<what happened>"`. Read the note and answer it.
+- **Money comes last.** A paid step marked just-in-time (such as China's filing server) isn't offered until everything else its dependents need is done.
+- **Advice:** steps marked ⚖ need a lawyer or adviser. Say so, and give the question to ask; never answer it as fact.
+- **Stale sources:** if a step's sources were checked more than 90 days ago, re-read them before relying on the step.
+
+## Places with their own rules (jurisdiction packs)
+
+`jurisdiction: cn-mainland` in a stack file loads the China pack. It adds:
+- **Up-front questions** (`stack guide ask`), answered once under `profile:`.
+- **Warnings** for providers that don't serve mainland users: Google sign-in, Stripe, Vercel, Cloudflare, Resend, AWS.
+- **The guided route:**
+  - for a new business: plan the entity, ask a host, obtain address documents, register, confirm banking and tax obligations;
+  - real-name checks;
+  - the domain, and the filing server, bought just in time;
+  - ICP filing with its 24-hour SMS;
+  - app filing;
+  - going live;
+  - the police filing within 30 days;
+  - SMS approval;
+  - a privacy policy.
+
+  Payments and data export show only when the answers need them.
+
+New business registration is guided when `subject` is `company` or `individual-business` and `registration` is `cluster-host` or `own-premises`. These are different legal routes; do not reuse company shareholder, bank or Apple-organisation requirements for an individual business. Read [Guangzhou registration and Nansha hosting](references/guangzhou-business-registration.md) before advising on this route.
+
+For address hosting, first show the inquiry draft for review. Send it only if the owner explicitly asks. Prefer a government-backed address-only service; do not assume a project pitch or incubation application. Keep `cn.biz.host.inquiry` open until the written eligibility, fee and materials reply arrives. Keep `cn.biz.host` open until the owner has approved the offer and obtained valid address-use documents. A message sent, a local test or a manually completed demo step is not a real registration approval. Do not open a new browser session unless needed and authorised.
+
+## Skills and tools a stack needs
+
+`doctor` lists the agent skills and plugins that help with a stack's providers (for example CloudBase's toolkit for `tencent-cloudbase`, Cloudflare's for `cloudflare`), and whether each is installed. It also checks each pack's CLIs (`tccli` for China). Installing any of them is a download: ask first, and install in the app's own project, not globally, when it gives an agent account access.
+
 ## Use it in another project
 
 The tool lives in this repo; each app keeps only its own `stack.yaml`.
@@ -109,6 +165,8 @@ A full example is [`docs/stack-setup/example.stack.yaml`](../../docs/stack-setup
 | `resend` | email | domain verified, region, DNS records, a key exists |
 | `stripe` | payments | webhook routes refuse unsigned calls; endpoints enabled (needs the Stripe CLI) |
 | `google-oauth` | sign-in | the API redirects to Google with the expected client |
+| `dnspod` | DNS (China) | the domain is in DNSPod with its nameservers delegated; each server's A record matches it |
+| `tencent-lighthouse` | API host (China) | running; prepaid and not near expiry (a filing needs it); open ports; `/health` |
 
 A provider with no adapter yet is reported as skipped, not failed. To add one, write `scripts/adapters/<provider>.mjs` with `validate`, `gates`, `doctor`, `import` and `verify`. Register it in `adapters/index.mjs` and test it against recorded JSON in `tests/`.
 

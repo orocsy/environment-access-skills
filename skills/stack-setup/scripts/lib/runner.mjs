@@ -3,6 +3,8 @@ import { capabilityOrder } from "./schema.mjs";
 import { recordResource } from "./state.mjs";
 import { closeByChecks, ledger } from "./gates.mjs";
 import { storeGates, verifyStores } from "./stores.mjs";
+import { packs } from "../packs/index.mjs";
+import { skillStatus } from "./skills.mjs";
 
 const RANK = { [RED]: 3, [BLOCKED]: 2, [SKIPPED]: 1, [GREEN]: 0 };
 
@@ -45,8 +47,10 @@ async function eachCapability(ctx, adapters, step, onResult) {
 	}
 }
 
+export const packFor = (stack) => (stack.jurisdiction ? packs[stack.jurisdiction] : null);
+
 export function allGates(ctx, adapters) {
-	return ledger(ctx.stack, ctx.state, adapters, storeGates(ctx.stack));
+	return ledger(ctx.stack, ctx.state, adapters, [...storeGates(ctx.stack), ...(packFor(ctx.stack)?.gates(ctx.stack) ?? [])]);
 }
 
 export async function verify(ctx, adapters) {
@@ -90,6 +94,7 @@ export async function doctor(ctx, adapters) {
 	const tools = new Map([["node", ["--version"]]]);
 	for (const provider of providers) for (const t of adapters[provider]?.tools ?? []) tools.set(t.cmd, t.args);
 	if (ctx.stack.secrets?.canonical?.type === "1password") tools.set("op", ["--version"]);
+	for (const t of packFor(ctx.stack)?.tools ?? []) tools.set(t.cmd, t.args);
 	const checks = [];
 	for (const [cmd, args] of tools) {
 		const result = await ctx.run(cmd, args);
@@ -109,7 +114,8 @@ export async function doctor(ctx, adapters) {
 		.map((d) => ({ ...d, days: Math.ceil((Date.parse(`${d.date}T00:00:00Z`) - today) / 86400000) }))
 		.filter((d) => d.days >= 0)
 		.sort((a, b) => a.days - b.days);
-	return { checks: merge(checks), deadlines };
+	const skills = await skillStatus(ctx.stack, { repoRoot: ctx.repoRoot, lookup: ctx.skillLookup });
+	return { checks: merge(checks), deadlines, skills };
 }
 
 export const worst = (checks) => checks.reduce((w, c) => (RANK[c.status] > RANK[w] ? c.status : w), GREEN);

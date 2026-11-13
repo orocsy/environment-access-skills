@@ -1,4 +1,5 @@
 import { assertNoSecrets } from "./guard.mjs";
+import { packs as knownPacks } from "../packs/index.mjs";
 
 const SLUG = /^[a-z0-9][a-z0-9-]{0,62}$/;
 const HOST = /^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
@@ -13,8 +14,9 @@ const isMap = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
 
 // Checks the shape every app shares; each adapter checks its own options.
 // Returns { stack, errors } and never throws for a bad file.
-export function validateStack(raw, adapters = {}) {
+export function validateStack(raw, adapters = {}, packs = knownPacks) {
 	const errors = [];
+	const warnings = [];
 	const need = (ok, message) => ok || errors.push(message);
 	try {
 		assertNoSecrets(raw, "stack.yaml");
@@ -88,7 +90,16 @@ export function validateStack(raw, adapters = {}) {
 		need(isMap(d) && /^\d{4}-\d{2}-\d{2}$/.test(d.date ?? ""), `deadlines[${i}].date: YYYY-MM-DD`);
 		need(typeof d?.what === "string" && d.what, `deadlines[${i}].what is required`);
 	});
-	return errors.length ? { stack: null, errors } : { stack: raw, errors };
+	if (raw.jurisdiction !== undefined) {
+		const pack = packs[raw.jurisdiction];
+		if (!pack) errors.push(`jurisdiction: one of ${Object.keys(packs).join(", ") || "(none yet)"}`);
+		else {
+			const checked = pack.validate(raw);
+			errors.push(...checked.errors);
+			warnings.push(...checked.warnings);
+		}
+	}
+	return errors.length ? { stack: null, errors, warnings } : { stack: raw, errors, warnings };
 }
 
 // Capabilities in an order where anything named by `on:` comes first.
