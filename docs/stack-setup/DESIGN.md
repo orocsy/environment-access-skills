@@ -164,3 +164,10 @@ Tests follow this repo's style: `node --test`. Adapters are tested against recor
 3. **WiggleTrail's real `stack.yaml` lives in the backend repo**, under `infra/stack/`, because its IDs don't belong in this public repo.
 
 Terraform/OpenTofu was weighed against this design in [terraform-comparison.md](terraform-comparison.md). The verdict is hybrid: stack-setup orchestrates, and OpenTofu may later run inside some adapters.
+
+## More than one kind of stack (10 Nov 2026)
+
+One app can have several deployments, each with its own stack file. Their providers can be completely different: Vercel and AWS for one, Tencent CloudBase or Lighthouse servers for a China mainland one. A top-level `jurisdiction:` loads a **compliance pack**: an interview, validation rules and guided steps for that place's filings.
+- Guided steps for long human flows, one screen at a time: [guided-setup.md](guided-setup.md).
+- China mainland (Tencent CloudBase or servers, ICP, police filing, mini programs, WeChat Pay and sign-in, PIPL): [china-mainland.md](china-mainland.md), with a synthetic [example-cn.stack.yaml](example-cn.stack.yaml).
+- One sign-in per provider, with the agent minting everything else, and an agent inbox for confirmation emails: [one-login.md](one-login.md).
