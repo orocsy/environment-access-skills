@@ -22,6 +22,7 @@ export const INTERVIEW = [
 	{ key: "commercial", question: "Will it take payments or sell anything online?", options: [true, false] },
 	{ key: "children", question: "Will children under 14 use it, or will it store their data?", options: [true, false] },
 	{ key: "data_leaves_mainland", question: "Will any user data leave mainland China?", options: [true, false] },
+	{ key: "ai", question: "Does the app offer generative AI to users (chat, writing, images, speech), even through another company's model?", options: [true, false] },
 	{ key: "domain", question: "The domain for China: a new one bought at Tencent, one to transfer in, or one already at a mainland registrar?", options: ["new", "transfer", "existing"] },
 ];
 
@@ -523,6 +524,26 @@ export function gates(stack) {
 							],
 					needs: "adviser: whether selling online needs a commercial licence (B25) for your service",
 					sources: [WECHAT_SETTLEMENT],
+				}
+			: null,
+		p.ai
+			? {
+					id: "cn.ai.filing",
+					track: "launch",
+					bundle: "go-live",
+					type: "terms",
+					who: "you, with the agent preparing the forms",
+					title: "Register the app's generative AI service with the provincial cyberspace office (生成式人工智能服务 登记/备案)",
+					where: "the provincial cyberspace administration (省网信办) for where the filer is registered",
+					after: ["cn.filing.review"],
+					steps: [
+						"Confirm the route: an app that calls an already-filed model (such as DeepSeek or Qwen) through its API usually registers its use (登记); training or offering its own model needs the full filing (备案)",
+						"The agent drafts the forms: the model used and its filing number, what users can do with it, content-safety measures (keyword filtering, human review, complaint channel) and how children are protected",
+						"Show 'AI-generated' labels on generated content, as the labelling rules require",
+						"Submit through the provincial office's channel; keep its acknowledgement",
+					],
+					takes: "weeks; the office sets the pace",
+					needs: "adviser: which route (登记 or 备案) applies to this service, and the content-safety assessment",
 				}
 			: null,
 		p.data_leaves_mainland

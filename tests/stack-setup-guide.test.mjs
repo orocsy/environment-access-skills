@@ -22,6 +22,7 @@ profile:
   commercial: false
   children: true
   data_leaves_mainland: false
+  ai: false
   domain: new
 capabilities:
   dns: { provider: dnspod, registrar: tencent }
@@ -279,4 +280,12 @@ test("business track: city is asked for a business being formed, not for a perso
 	assert.doesNotMatch(ask.out, /- registration:|- city:/, "a person isn't asked business questions");
 	const all = await run(person, ["guide", "all"]);
 	assert.doesNotMatch(all.out, /### business/);
+});
+
+test("China pack: generative AI features add the AI service filing after the ICP filing", async () => {
+	const dir = await workspace(CN.replace("  ai: false\n", "  ai: true\n"));
+	const { out } = await run(dir, ["guide", "all"]);
+	assert.match(out, /Register the app's generative AI service with the provincial cyberspace office .* · after cn\.filing\.review ⚖/);
+	const none = await workspace(CN);
+	assert.doesNotMatch((await run(none, ["guide", "all"])).out, /generative AI service/);
 });

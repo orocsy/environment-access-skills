@@ -60,7 +60,7 @@ Values only a person can get go through `gates pickup`: Google's client JSON (`g
 
 ### The Cloudflare bootstrap token
 
-Add `bootstrap_token_file:` to the Cloudflare capability. The owner then creates one token from Cloudflare's "Create additional tokens" template and hands it back (`gates pickup cloudflare.bootstrap`). It's kept only on this computer, at 0600.
+Add `bootstrap_token_file: ~/.config/stack-setup/cloudflare-bootstrap.env` to the Cloudflare capability. That's the standard path: one starter token per computer, shared by every project on it, while each project gets its own agent token. The owner then creates one token from Cloudflare's "Create additional tokens" template and hands it back (`gates pickup cloudflare.bootstrap`). It's kept only on this computer, at 0600.
 
 From then on the agent:
 - mints its own token with exactly the permissions the stack needs, limited to the app's zone and account;
