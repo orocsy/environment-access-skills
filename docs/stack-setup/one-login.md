@@ -68,11 +68,23 @@ Some steps send an email that someone has to open: a forwarding destination to c
   Mail it didn't expect is shown to the owner, not acted on.
 - **The owner's own inbox stays the owner's.** A specific verification email can be forwarded to the agent inbox when they want it handled.
 
+## Working with each project's own agent
+
+Every project has an agent building it. That agent knows the tech stack; stack-setup knows the providers. They meet in one file:
+1. **The project's agent runs `stack init`.** It reads the repo: package files, Dockerfiles and compose files, env examples, deploy docs. It drafts `infra/stack/stack.yaml`: a provider for each capability, the env names the code reads (the contract), and the interview's answers it can infer.
+2. **The owner answers only what can't be inferred**, such as who files in China, or whether the app takes payments, through `stack guide ask`.
+3. **stack-setup then works from the file:** `plan`, `apply`, `guide`. When the project's agent adds a dependency (a queue, an email provider, AI), it edits the stack file, and the next `plan` shows the change.
+4. **Machine-wide credentials are shared:** the Cloudflare starter token, provider CLI sign-ins, and the AWS owner sign-in. A new project creates only its own agent keys.
+
+Already true: an existing company skips the registration steps (`registration: registered`), straight to filings and audits. Apps offering generative AI in China get the AI service filing step (`ai: true`).
+
 ## Milestones (to approve)
 
 1. **O1:** the Cloudflare bootstrap token and token minting; email forwarding (Email Routing rules) as a capability. This also finishes WiggleTrail's `support@` forwarding.
+   - Live 13 Nov 2026: the owner's starter token is at `~/.config/stack-setup/cloudflare-bootstrap.env`, shared by every project on this computer. WiggleTrail's agent token is minted, and the manual one it replaced is revoked.
    - Built 12 Nov 2026, in #8. WiggleTrail's `support@` forwarding was already live, so it's now checked (green) rather than rebuilt. Minting waits on the owner's one bootstrap token.
 2. **O2:** `environments: [sandbox, live]` in one stack file; Stripe live mode through the same adapter; a go-live gate bundle.
 3. **O3:** the agent inbox: Resend receiving, a `wait-for-email` step kind, and confirmation links followed only for approved steps.
 4. **O4:** a Stripe Projects adapter for the providers it covers, after checking what an Australian account can use.
 5. **O5:** an Apple App Store Connect API key adapter, so bundle IDs, certificates and App Store settings stop being console work.
+6. **O6:** `stack init`, so a project's agent drafts its stack file from the code.
