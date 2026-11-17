@@ -145,7 +145,14 @@ For address hosting, first show the inquiry draft for review. Send it only if th
 The tool lives in this repo; each app keeps only its own `stack.yaml`.
 
 1. Install the skill once per machine: `ln -s <this repo>/skills/stack-setup ~/.claude/skills/stack-setup`. Every Claude session in every project then has it.
-2. In the app's repo, write `infra/stack/stack.yaml`. Start from [`docs/stack-setup/example.stack.yaml`](../../docs/stack-setup/example.stack.yaml) and pick a provider for each capability. A provider without an adapter is reported as skipped, not failed.
+2. In the app's repo, run `stack init` (the project's own agent should do this). It reads:
+   - package manifests;
+   - Docker and compose files;
+   - GitHub workflows;
+   - Xcode projects;
+   - env examples. It never reads a real `.env`, and copies env names, never values.
+
+   It then drafts `infra/stack/stack.yaml`, with a comment giving the evidence for each provider. Whatever the code can't tell becomes a question, not a guess. It never overwrites an existing stack file: it writes `stack.draft.yaml` beside it. For a China deployment: `stack init --jurisdiction cn-mainland --out infra/stack/cn.stack.yaml`. When the project adds a dependency later, its agent edits the stack file, and the next `plan` shows the change.
 3. Run `connect`, then `import` (if things already exist), `verify` and `plan`. Commit `infra/stack/.stack/state.json`.
 4. `apply --confirm` only after the owner has seen the plan.
 

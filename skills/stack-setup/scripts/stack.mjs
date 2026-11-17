@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { existsSync, realpathSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { parseYaml } from "./lib/yaml.mjs";
@@ -14,6 +14,36 @@ import { closeByChecks, setGate } from "./lib/gates.mjs";
 import { applyMarkdown, connectMarkdown, doctorMarkdown, gatesMarkdown, planMarkdown, teardownMarkdown, teardownResultMarkdown, verifyMarkdown } from "./lib/report.mjs";
 import { CHANGES, apply, plan, teardown, teardownList } from "./lib/apply.mjs";
 import { pickup, rotate } from "./lib/rotate.mjs";
+import { detect, draft, exists, render } from "./lib/init.mjs";
+
+async function init(values, { cwd, out, detectOptions }) {
+	const dir = resolve(cwd, values.dir ?? ".");
+	const target = resolve(dir, values.out ?? "infra/stack/stack.yaml");
+	const app = (values.app ?? basename(dir)).toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "") || "app";
+	const detected = await detect(dir, detectOptions);
+	if (!detected.found.size) {
+		out.write("Found 0 capabilities: no manifests, Docker files, workflows or env examples to work from yet. Nothing was written; run stack init again once the project has code.\n");
+		return 0;
+	}
+	const result = draft(detected, { app, domain: values.domain ?? "example.com", jurisdiction: values.jurisdiction });
+	const text = render(result, { forms: detected.forms.length ? detected.forms : ["website"] });
+	const { errors } = validateStack(parseYaml(text), builtIn);
+	if (errors.length) throw new Error(`the draft doesn't pass its own checks (please report this):\n- ${errors.join("\n- ")}`);
+	const path = (await exists(target)) ? target.replace(/\.ya?ml$/, ".draft.yaml") : target;
+	await mkdir(dirname(path), { recursive: true });
+	await writeFile(path, text, { flag: path === target ? "wx" : "w" });
+	out.write(
+		[
+			`Drafted ${relative(cwd, path).startsWith("..") ? path : relative(cwd, path)}${path !== target ? ` (beside the existing ${basename(target)}, which wasn't touched)` : ""}.`,
+			`Found ${detected.found.size} capabilities and ${Object.values(result.stack.contract).flat().length} env names${detected.skipped.length ? `; skipped ${detected.skipped.length} real env file${detected.skipped.length === 1 ? "" : "s"} unread` : ""}.`,
+			...(result.questions.length ? ["", "Questions the code can't answer:", ...result.questions.map((q) => `  - ${q}`)] : []),
+			"",
+			"Next: check the file, answer the questions, then stack doctor and stack plan.",
+			"",
+		].join("\n"),
+	);
+	return 0;
+}
 
 // Bootstrap scripts are named relative to the app repo, which holds the stack file.
 function repoRootOf(stackPath, cwd) {
@@ -30,6 +60,12 @@ const strip = ({ run, ...step }) => step;
 import { adapters as builtIn } from "./adapters/index.mjs";
 
 const USAGE = `stack <command> [--stack path/to/stack.yaml]
+
+Start a project:
+  init       draft infra/stack/stack.yaml from this repo's code (manifests, Docker,
+             workflows, env examples; never a real .env), with the reasons and the
+             questions the code can't answer. Options: --app, --domain,
+             --jurisdiction cn-mainland, --out <file>, --dir <repo>
 
 Read only:
   doctor     check tools, logins and deadlines
@@ -65,7 +101,7 @@ Options:
 `;
 
 const LATER = {};
-const COMMANDS = ["verify", "import", "gates", "doctor", "connect", "plan", "apply", "sync", "teardown", "rotate", "guide"];
+const COMMANDS = ["init", "verify", "import", "gates", "doctor", "connect", "plan", "apply", "sync", "teardown", "rotate", "guide"];
 
 export async function loadStack(path, adapters = builtIn) {
 	return (await loadStackChecked(path, adapters)).stack;
@@ -96,6 +132,11 @@ export async function main(argv, { adapters = builtIn, out = process.stdout, cwd
 			file: { type: "string" },
 			wait: { type: "string" },
 			help: { type: "boolean", short: "h" },
+			app: { type: "string" },
+			domain: { type: "string" },
+			jurisdiction: { type: "string" },
+			out: { type: "string" },
+			dir: { type: "string" },
 		},
 	});
 	const [command, ...rest] = positionals;
@@ -113,6 +154,7 @@ export async function main(argv, { adapters = builtIn, out = process.stdout, cwd
 	}
 	if (values.confirm && values["no-save"])
 		throw new Error("--no-save can't be used with --confirm: state must record what was changed");
+	if (command === "init") return init(values, { cwd, out, ...overrides });
 	const stackPath =
 		values.stack ? resolve(cwd, values.stack) : [join(cwd, "infra/stack/stack.yaml"), join(cwd, "stack.yaml")].find(existsSync);
 	if (!stackPath) throw new Error("No stack.yaml found; pass --stack <file>");
