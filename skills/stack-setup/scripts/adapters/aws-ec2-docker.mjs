@@ -34,6 +34,7 @@ async function instance(ctx, cap) {
 // names already checked by the schema, never secret values.
 export async function hostShell(ctx, capName, remote, { input } = {}) {
 	const cap = ctx.stack.capabilities[capName];
+	if (!cap.ssh?.user || !cap.ssh?.key) throw new Blocked(`${capName} has no ssh: { user, key } settings, so its containers can't be checked yet`);
 	// The recorded or declared address keeps SSH checks working while the AWS login has lapsed.
 	const host =
 		ctx.state.resources[`aws.address.${cap.name}`]?.ip ?? cap.ssh.host ?? (await instance(ctx, cap))?.PublicIpAddress;

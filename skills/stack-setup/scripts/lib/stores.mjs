@@ -64,7 +64,7 @@ export async function writeStore(ctx, canonical, text) {
 }
 
 // A local secret file must not be somewhere Git would pick it up.
-async function assertPrivateLocation(ctx, path) {
+export async function assertPrivateLocation(ctx, path) {
 	const full = expandHome(path);
 	const top = await ctx.run("git", ["-C", dirname(full), "rev-parse", "--show-toplevel"]);
 	if (top.code !== 0 || top.missing) return;

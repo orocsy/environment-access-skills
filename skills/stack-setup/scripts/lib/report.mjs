@@ -54,7 +54,7 @@ export function verifyMarkdown(stack, { checks, gates }, at) {
 	return text;
 }
 
-export function doctorMarkdown(stack, { checks, deadlines }, at) {
+export function doctorMarkdown(stack, { checks, deadlines, skills }, at) {
 	const text = [
 		`## stack doctor: ${stack.app}`,
 		"",
@@ -68,6 +68,14 @@ export function doctorMarkdown(stack, { checks, deadlines }, at) {
 		"",
 		...(deadlines.length ? deadlines.map((d) => `- ${d.date} (${d.days} days): ${d.what}`) : ["None ahead."]),
 		"",
+		...(skills?.length
+			? [
+					"## Agent skills this stack uses",
+					"",
+					...skills.map((s) => `- ${s.installed ? "✅" : "☐"} ${s.name} (${s.kind}) for ${s.for.join(", ")}: ${s.why}${s.installed ? "" : `. Install (asks first): ${s.install}`}`),
+					"",
+				]
+			: []),
 	].join("\n");
 	assertNoSecrets(text, "report");
 	return text;

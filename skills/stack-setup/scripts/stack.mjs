@@ -1,18 +1,49 @@
 #!/usr/bin/env node
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { existsSync, realpathSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { parseYaml } from "./lib/yaml.mjs";
 import { validateStack } from "./lib/schema.mjs";
 import { loadState, saveState } from "./lib/state.mjs";
 import { makeContext } from "./lib/context.mjs";
-import { allGates, doctor, importResources, verify, worst } from "./lib/runner.mjs";
+import { allGates, doctor, importResources, packFor, verify, worst } from "./lib/runner.mjs";
+import { interviewScreen, route, stepScreen, timeline } from "./lib/guide.mjs";
 import { closeByChecks, setGate } from "./lib/gates.mjs";
 import { applyMarkdown, connectMarkdown, doctorMarkdown, gatesMarkdown, planMarkdown, teardownMarkdown, teardownResultMarkdown, verifyMarkdown } from "./lib/report.mjs";
 import { CHANGES, apply, plan, teardown, teardownList } from "./lib/apply.mjs";
 import { pickup, rotate } from "./lib/rotate.mjs";
+import { detect, draft, exists, render } from "./lib/init.mjs";
+
+async function init(values, { cwd, out, detectOptions }) {
+	const dir = resolve(cwd, values.dir ?? ".");
+	const target = resolve(dir, values.out ?? "infra/stack/stack.yaml");
+	const app = (values.app ?? basename(dir)).toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "") || "app";
+	const detected = await detect(dir, detectOptions);
+	if (!detected.found.size) {
+		out.write("Found 0 capabilities: no manifests, Docker files, workflows or env examples to work from yet. Nothing was written; run stack init again once the project has code.\n");
+		return 0;
+	}
+	const result = draft(detected, { app, domain: values.domain ?? "example.com", jurisdiction: values.jurisdiction });
+	const text = render(result, { forms: detected.forms.length ? detected.forms : ["website"] });
+	const { errors } = validateStack(parseYaml(text), builtIn);
+	if (errors.length) throw new Error(`the draft doesn't pass its own checks (please report this):\n- ${errors.join("\n- ")}`);
+	const path = (await exists(target)) ? target.replace(/\.ya?ml$/, ".draft.yaml") : target;
+	await mkdir(dirname(path), { recursive: true });
+	await writeFile(path, text, { flag: path === target ? "wx" : "w" });
+	out.write(
+		[
+			`Drafted ${relative(cwd, path).startsWith("..") ? path : relative(cwd, path)}${path !== target ? ` (beside the existing ${basename(target)}, which wasn't touched)` : ""}.`,
+			`Found ${detected.found.size} capabilities and ${Object.values(result.stack.contract).flat().length} env names${detected.skipped.length ? `; skipped ${detected.skipped.length} real env file${detected.skipped.length === 1 ? "" : "s"} unread` : ""}.`,
+			...(result.questions.length ? ["", "Questions the code can't answer:", ...result.questions.map((q) => `  - ${q}`)] : []),
+			"",
+			"Next: check the file, answer the questions, then stack doctor and stack plan.",
+			"",
+		].join("\n"),
+	);
+	return 0;
+}
 
 // Bootstrap scripts are named relative to the app repo, which holds the stack file.
 function repoRootOf(stackPath, cwd) {
@@ -30,6 +61,12 @@ import { adapters as builtIn } from "./adapters/index.mjs";
 
 const USAGE = `stack <command> [--stack path/to/stack.yaml]
 
+Start a project:
+  init       draft infra/stack/stack.yaml from this repo's code (manifests, Docker,
+             workflows, env examples; never a real .env), with the reasons and the
+             questions the code can't answer. Options: --app, --domain,
+             --jurisdiction cn-mainland, --out <file>, --dir <repo>
+
 Read only:
   doctor     check tools, logins and deadlines
   connect    the sign-ins to do before any work, and which are done
@@ -44,6 +81,11 @@ Changes (each shows its plan and does nothing without --confirm):
   teardown   remove everything stack-setup created (never what it imported)
   rotate <name>   replace a key or secret: new one in, app reloaded, old one revoked
                   (an env name a provider mints, or agent-key; --revoke <id> for a key made by hand)
+  guide           the next step that's yours, with everything you need on one screen
+  guide all       the whole route: tracks, what's waiting, deadlines, what costs money
+  guide done [id] [--note text]   say a step is finished (steps with a check close themselves)
+  guide stuck "<what happened>"   record a problem on the current step for the agent to answer
+  guide ask       the up-front questions a jurisdiction pack asks, with your answers
   gates set <id> <open|waiting|done|skipped> [--by name] [--note text]
   gates pickup <id> --file <path>   store what a person handed back (Google's client
                   JSON or a KEY=value file), refresh the mirrors, move the file to the Trash
@@ -59,12 +101,17 @@ Options:
 `;
 
 const LATER = {};
-const COMMANDS = ["verify", "import", "gates", "doctor", "connect", "plan", "apply", "sync", "teardown", "rotate"];
+const COMMANDS = ["init", "verify", "import", "gates", "doctor", "connect", "plan", "apply", "sync", "teardown", "rotate", "guide"];
 
 export async function loadStack(path, adapters = builtIn) {
-	const { stack, errors } = validateStack(parseYaml(await readFile(path, "utf8")), adapters);
+	return (await loadStackChecked(path, adapters)).stack;
+}
+
+// Warnings don't stop anything; they're shown at the top of plan, doctor and guide.
+async function loadStackChecked(path, adapters) {
+	const { stack, errors, warnings } = validateStack(parseYaml(await readFile(path, "utf8")), adapters);
 	if (errors.length) throw new Error(`${path} has problems:\n- ${errors.join("\n- ")}`);
-	return stack;
+	return { stack, warnings };
 }
 
 export async function main(argv, { adapters = builtIn, out = process.stdout, cwd = process.cwd(), ...overrides } = {}) {
@@ -85,6 +132,11 @@ export async function main(argv, { adapters = builtIn, out = process.stdout, cwd
 			file: { type: "string" },
 			wait: { type: "string" },
 			help: { type: "boolean", short: "h" },
+			app: { type: "string" },
+			domain: { type: "string" },
+			jurisdiction: { type: "string" },
+			out: { type: "string" },
+			dir: { type: "string" },
 		},
 	});
 	const [command, ...rest] = positionals;
@@ -102,10 +154,13 @@ export async function main(argv, { adapters = builtIn, out = process.stdout, cwd
 	}
 	if (values.confirm && values["no-save"])
 		throw new Error("--no-save can't be used with --confirm: state must record what was changed");
+	if (command === "init") return init(values, { cwd, out, ...overrides });
 	const stackPath =
 		values.stack ? resolve(cwd, values.stack) : [join(cwd, "infra/stack/stack.yaml"), join(cwd, "stack.yaml")].find(existsSync);
 	if (!stackPath) throw new Error("No stack.yaml found; pass --stack <file>");
-	const stack = await loadStack(stackPath, adapters);
+	const { stack, warnings } = await loadStackChecked(stackPath, adapters);
+	if (warnings.length && ["plan", "doctor", "guide", "apply"].includes(command) && !values.json)
+		out.write(`Notes for this ${stack.jurisdiction ?? ""} stack:\n${warnings.map((w) => `  ⚠ ${w}`).join("\n")}\n\n`);
 	const statePath = join(dirname(stackPath), ".stack", "state.json");
 	const state = await loadState(statePath, stack.app);
 	const ctx = makeContext(stack, state, { repoRoot: repoRootOf(stackPath, cwd), ...overrides });
@@ -162,6 +217,36 @@ export async function main(argv, { adapters = builtIn, out = process.stdout, cwd
 		const logins = result.checks.filter((c) => c.capability !== "tools" || c.status !== "green");
 		print({ checks: logins, gates: preflight }, connectMarkdown(stack, logins, preflight));
 		code = worst(logins) === "green" ? 0 : 2;
+	} else if (command === "guide") {
+		const pack = packFor(stack);
+		const sub = rest[0];
+		if (sub === "ask") {
+			if (!pack) throw new Error("this stack has no jurisdiction:, so there are no up-front questions");
+			out.write(interviewScreen(pack, stack));
+			return 0;
+		}
+		if (pack && pack.missingAnswers(stack).length && sub !== "all") {
+			out.write(`Answer these first (they go in stack.yaml under profile:):\n\n${interviewScreen(pack, stack)}`);
+			return 10;
+		}
+		const gates = allGates(ctx, adapters);
+		const r = route(gates, state, ctx.now());
+		if (sub === "all") print(r, timeline(stack, r));
+		else if (sub === "done") {
+			const id = rest[1] ?? r.next?.id;
+			if (!id) throw new Error("nothing is ready to mark done; name the step: stack guide done <id>");
+			setGate(gates, state, id, "done", { by: values.by ?? "owner", note: values.note, now: at });
+			const after = route(allGates(ctx, adapters), state, ctx.now());
+			out.write(`${id} → done\n\n${stepScreen(stack, after)}`);
+		} else if (sub === "stuck") {
+			const id = r.next?.id;
+			const text = rest.slice(1).join(" ").trim();
+			if (!id || !text) throw new Error('say what happened: stack guide stuck "<what happened>"');
+			const entry = state.gates[id] ?? { status: "open" };
+			entry.stuck = [...(entry.stuck ?? []), { at, text }];
+			state.gates[id] = entry;
+			out.write(`Noted on ${id}. The agent reads this next time and answers; the step stays open.\n`);
+		} else print(r.next ? { next: r.next } : { next: null }, stepScreen(stack, r));
 	} else if (command === "rotate") {
 		const target = rest[0];
 		if (!target) throw new Error("say what to rotate, like stack rotate RESEND_API_KEY");
@@ -190,13 +275,25 @@ export async function main(argv, { adapters = builtIn, out = process.stdout, cwd
 			if (command === "plan") return pending.length ? 10 : shown.some((s) => s.kind === "blocked") ? 2 : 0;
 			return pending.length ? 10 : 0;
 		}
-		const result = await apply(ctx, shown, { acceptCost: values["accept-cost"] });
+		let result = await apply(ctx, shown, { acceptCost: values["accept-cost"] });
+		// A step that changes what the agent can reach (a new token) is followed by one
+		// more plan, so steps that needed it happen in the same run, still as planned work.
+		// Up to 4 rounds: e.g. mint a token, use it to switch on a feature, then mint a
+		// narrower token once that feature no longer needs the extra permission.
+		for (let round = 1, last = result.done; round < 4 && !result.failed && !result.waiting && last.some((s) => s.replan); round++) {
+			const again = (await plan(ctx, adapters, { mirrors: command === "sync", waitMinutes })).filter((s) => CHANGES.includes(s.kind));
+			if (!again.length) break;
+			const next = await apply(ctx, again, { acceptCost: values["accept-cost"] });
+			result = { ...next, done: [...result.done, ...next.done] };
+			last = next.done;
+		}
 		const markdown = applyMarkdown(stack, result, at);
 		print({ done: result.done.map(({ run, ...s }) => s), waiting: result.waiting && strip(result.waiting), failed: result.failed && strip(result.failed) }, markdown);
 		if (values.report) await writeFile(resolve(cwd, values.report), markdown);
 		code = result.failed ? 1 : result.waiting ? 3 : 0;
 	}
-	if (!values["no-save"] && !["doctor", "connect", "plan"].includes(command) && !(command === "gates" && rest[0] !== "set") && !(["apply", "sync", "teardown"].includes(command) && !values.confirm))
+	const guideWrites = command === "guide" && ["done", "stuck"].includes(rest[0]);
+	if (!values["no-save"] && !["doctor", "connect", "plan"].includes(command) && !(command === "gates" && rest[0] !== "set") && !(command === "guide" && !guideWrites) && !(["apply", "sync", "teardown"].includes(command) && !values.confirm))
 		await saveState(statePath, state);
 	return code;
 }

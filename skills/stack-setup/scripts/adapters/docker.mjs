@@ -8,7 +8,7 @@ function onHost(provider, image) {
 		tools: [],
 		validate(cap, stack) {
 			const host = stack.capabilities?.[cap.on];
-			return host?.provider === "aws-ec2-docker" ? [] : ["on: a capability using provider aws-ec2-docker"];
+			return ["aws-ec2-docker", "tencent-lighthouse"].includes(host?.provider) ? [] : ["on: a server capability (aws-ec2-docker or tencent-lighthouse)"];
 		},
 		gates: () => [],
 		async verify(ctx, name, cap) {

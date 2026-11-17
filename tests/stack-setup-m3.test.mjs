@@ -95,6 +95,8 @@ test("agent key: made once with the owner's sign-in, then checks work with no si
 	assert.match(verified.out, /`aws\.login` \| ✅ green \| agent key example-agent/);
 	assert.match(verified.out, /`api_host\.instance` \| ✅/);
 	assert.equal((await run(dir, ["plan"], { ...world, awsLoggedIn: true })).code, 0, "nothing left to change");
+	const lapsed = await run(dir, ["plan"], world);
+	assert.match(lapsed.out, /= no change `api_host\.agent`: agent key in use \(example-agent\); its permissions are checked the next time you sign in to AWS/, "a lapsed owner sign-in doesn't block the plan");
 
 	const rotated = await run(dir, ["rotate", "agent-key", "--confirm"], world);
 	assert.equal(rotated.code, 0, rotated.out);
@@ -216,6 +218,8 @@ test("pickup: Google's downloaded client JSON goes to the store and mirrors, the
 
 test("pickup: names exactly what's missing from a hand-off file", () => {
 	assert.deepEqual(parseHandoff("A=1\nB=two\n", ["B"]), { B: "two" });
+	assert.deepEqual(parseHandoff("bare-token-value\n", ["ONLY"]), { ONLY: "bare-token-value" }, "a bare value when one is expected");
+	assert.throws(() => parseHandoff("bare-token-value\n", ["A", "B"]), /doesn't have A, B/);
 	assert.throws(() => parseHandoff('{"web":{"client_id":"x"}}', ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"]), /doesn't have GOOGLE_CLIENT_SECRET/);
 });
 

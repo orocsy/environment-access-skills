@@ -61,6 +61,10 @@ export async function plan(ctx, adapters, { mirrors = false, waitMinutes } = {})
 		}
 	}
 
+	// Steps blocked only for want of permissions that a planned token step adds are
+	// planned again, in the same apply, once that token exists.
+	if (steps.some((s) => s.replan && CHANGES.includes(s.kind)))
+		for (const s of steps) if (s.kind === "blocked" && /lacks this permission/.test(s.summary)) s.summary = `planned again after the token step, in the same apply (${s.summary})`;
 	if (!canonical || storeText === null) return steps;
 	// Config the store should hold: written in stack.yaml, or given by an adapter.
 	const config = {};
@@ -133,7 +137,8 @@ export async function apply(ctx, steps, { acceptCost = false } = {}) {
 export function teardownList(state) {
 	return Object.entries(state.resources)
 		.filter(([, r]) => r.createdBy === "stack-setup")
-		.sort(([, a], [, b]) => b.order - a.order);
+		// The agent's own credentials go last: everything before needs them to be removed.
+		.sort(([, a], [, b]) => (a.credential ? 1 : 0) - (b.credential ? 1 : 0) || b.order - a.order);
 }
 
 export async function teardown(ctx, adapters) {
