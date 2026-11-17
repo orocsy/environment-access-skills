@@ -3,12 +3,15 @@
 // *examples* — never a real .env — and records why it chose each provider.
 // Whatever the code can't tell becomes a question instead of a guess.
 import { readdir, readFile, stat } from "node:fs/promises";
-import { join, relative, basename } from "node:path";
+import { join, relative, basename, sep } from "node:path";
 import { execFile } from "node:child_process";
 import { findSecret } from "./guard.mjs";
 
 const SKIP = new Set(["node_modules", ".git", ".next", "dist", "build", ".venv", "venv", "__pycache__", "DerivedData", "Pods", ".turbo", "coverage", ".stack"]);
 const MAX_DEPTH = 4;
+
+// Repo-relative paths with forward slashes on every OS, so path rules and the draft read the same.
+const rel = (root, path) => relative(root, path).split(sep).join("/");
 
 async function walk(root, dir = root, depth = 0, out = []) {
 	if (depth > MAX_DEPTH) return out;
@@ -22,9 +25,9 @@ async function walk(root, dir = root, depth = 0, out = []) {
 		if (SKIP.has(e.name)) continue;
 		const path = join(dir, e.name);
 		if (e.isDirectory()) {
-			if (e.name.endsWith(".xcodeproj")) out.push(relative(root, path));
+			if (e.name.endsWith(".xcodeproj")) out.push(rel(root, path));
 			await walk(root, path, depth + 1, out);
-		} else out.push(relative(root, path));
+		} else out.push(rel(root, path));
 	}
 	return out;
 }
