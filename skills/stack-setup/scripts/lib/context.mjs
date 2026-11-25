@@ -105,8 +105,13 @@ export function errorText(result) {
 	return firstLine(text);
 }
 
+// Some CLIs print tool hints (an XML-like tag line) before the real message.
 export const firstLine = (text = "") =>
-	text.trim().split("\n")[0].slice(0, 200) || "no output";
+	text
+		.trim()
+		.split("\n")
+		.find((line) => line.trim() && !/^<[a-z-]+[\s>]/.test(line.trim()))
+		?.slice(0, 200) ?? "no output";
 
 // Reads one KEY=value from an env-style file without returning anything else.
 export async function readEnvValue(ctx, path, name) {

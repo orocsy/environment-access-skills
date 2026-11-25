@@ -153,6 +153,13 @@ stack doctor       check CLIs, versions, logins and deadlines
 2. **M2: provision, mint and sync** for Cloudflare DNS, Resend, GitHub, Vercel and the server env. Done when the WiggleTrail email domain could be rebuilt from scratch in a throwaway subdomain, then removed.
    - Done 9 Nov 2026: `stackproof.wiggletrail.com` was built live (domain, 4 DNS records, verification, send-only key, local store, GitHub mirror), sent a delivered email, then torn down with the key revoked. WiggleTrail's own `plan` showed nothing to change.
 3. **M3: Stripe and Google.** Stripe webhooks, Connect checks and restricted-key gates; the Google gate with prefill and secret pickup; AWS host bootstrap reusing `infra/ec2-bootstrap.sh`.
+   - Done 10 Nov 2026:
+     - Stripe webhooks with their secrets, and a restricted-key gate.
+     - Google client pickup from the downloaded JSON.
+     - AWS host bootstrap, gated on cost.
+     - `rotate` for every minted value.
+     - A narrow AWS agent key, so no 12-hour sign-ins. It's live for WiggleTrail and its policy is checked in AWS's simulator.
+   - Writing to 1Password moved to a later step: the owner wants to compare free secret managers first.
 4. **M4: a second, different app (KidsBuddy)** with at least two different providers, to prove the "never identical" goal.
 
 Tests follow this repo's style: `node --test`. Adapters are tested against recorded CLI and API JSON with synthetic values, with no live calls in tests. Live checks only ever run `verify`.

@@ -67,7 +67,7 @@ test("plan: a converged stack has nothing to change", async () => {
 	assert.equal(code, 0, out);
 	assert.match(out, /Nothing to change\./);
 	assert.match(out, /= no change `api_host\.dns`/);
-	assert.match(out, /= no change `email\.key`: RESEND_API_KEY already in the store/);
+	assert.match(out, /= no change `email\.key`: RESEND_API_KEY already in the store \(replace it with stack rotate RESEND_API_KEY\)/);
 	assert.match(out, /= no change `web\.example-console\.env\.API_URL`: example-console: API_URL present \(sensitive, not compared\)/);
 	assert.match(out, /= no change `web\.example-console\.env\.NEXT_PUBLIC_API_URL`: example-console: NEXT_PUBLIC_API_URL=https:\/\/api\.example\.com/);
 	assert.deepEqual(writes(world), []);

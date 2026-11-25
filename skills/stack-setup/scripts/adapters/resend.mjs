@@ -1,5 +1,6 @@
 import { GREEN, RED } from "../lib/context.mjs";
 import { recordCreated } from "../lib/state.mjs";
+import { canRevokeSafely, storeAndSpread } from "../lib/rotate.mjs";
 
 const LOGIN_GATE = "resend.login";
 const resend = (ctx, cap, args) => ctx.json("resend", [...args, "--profile", cap.profile, "--json"], { gate: LOGIN_GATE });
@@ -111,7 +112,7 @@ export default {
 		const env = keyEnv(cap);
 		steps.push(
 			storeHas(env)
-				? { id: `${name}.key`, kind: "noop", summary: `${env} already in the store (replacing it is stack rotate, M3)` }
+				? { id: `${name}.key`, kind: "noop", summary: `${env} already in the store (replace it with stack rotate ${env})` }
 				: {
 						id: `${name}.key`,
 						kind: "create",
@@ -121,12 +122,35 @@ export default {
 							const found = await findDomain(ctx, cap);
 							const made = await change(ctx, cap, ["api-keys", "create", "--name", keyName(ctx, cap), "--permission", "sending_access", "--domain-id", found.id]);
 							if (typeof made.token !== "string" || !made.id) throw new Error("Resend did not return a key");
-							recordCreated(ctx, `resend.key.${made.id}`, "resend", { id: made.id, name: keyName(ctx, cap) });
+							recordCreated(ctx, `resend.key.${made.id}`, "resend", { id: made.id, name: keyName(ctx, cap), env });
 							ctx.minted.set(env, made.token);
 						},
 					},
 		);
 		return steps;
+	},
+	// New key first, into the store and mirrors, then the old one revoked at Resend.
+	async rotate(ctx, name, cap, target, { revoke = [] } = {}) {
+		if (target !== keyEnv(cap)) return null;
+		const domain = await findDomain(ctx, cap);
+		if (!domain) throw new Error(`${domainName(ctx, cap)} doesn't exist yet; run stack apply first`);
+		const old = [
+			...Object.entries(ctx.state.resources).filter(([k, r]) => k.startsWith("resend.key.") && r.env === target).map(([, r]) => r.id),
+			...revoke,
+		];
+		const made = await change(ctx, cap, ["api-keys", "create", "--name", keyName(ctx, cap), "--permission", "sending_access", "--domain-id", domain.id]);
+		if (typeof made.token !== "string" || !made.id) throw new Error("Resend did not return a key");
+		recordCreated(ctx, `resend.key.${made.id}`, "resend", { id: made.id, name: keyName(ctx, cap), env: target });
+		await storeAndSpread(ctx, { [target]: made.token });
+		if (!canRevokeSafely(ctx.stack))
+			return `new ${target} is in the store and mirrors; the old key was kept because the app can't be told to reload (add secrets.canonical.reload), so revoke it after the next deploy: ${old.join(", ") || "none recorded"}`;
+		for (const id of old) {
+			await change(ctx, cap, ["api-keys", "delete", id, "--yes"]).catch((error) => {
+				if (!/not found/i.test(error.message)) throw error;
+			});
+			delete ctx.state.resources[`resend.key.${id}`];
+		}
+		return `new ${target} (${made.id}) in the store, mirrors and app; revoked ${old.join(", ") || "nothing (pass --revoke <id> for a key made by hand)"}`;
 	},
 	async remove(ctx, key, resource) {
 		const cap = Object.values(ctx.stack.capabilities).find((c) => c.provider === "resend");

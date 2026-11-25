@@ -55,6 +55,7 @@ export function validateStack(raw, adapters = {}) {
 			if (canonical.type === "server-env") {
 				need(isMap(caps[canonical.host]), "secrets.canonical.host: the capability that runs the server");
 				need(/^[~A-Za-z0-9_./-]+$/.test(canonical.path ?? ""), "secrets.canonical.path: a plain file path on the host");
+				need(canonical.reload === undefined || (typeof canonical.reload === "string" && !/[\r\n]/.test(canonical.reload)), "secrets.canonical.reload: one command the host runs so the app rereads the file");
 			} else if (canonical.type === "local-env") {
 				// Never passed to a shell, so Windows paths (C:\…) are fine here.
 				need(/^[~A-Za-z0-9_./\\: -]+$/.test(canonical.path ?? ""), "secrets.canonical.path: a plain file path on this machine");

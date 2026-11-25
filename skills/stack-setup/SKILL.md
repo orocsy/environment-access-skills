@@ -30,10 +30,12 @@ node $S plan       # what apply would do
 node $S apply --confirm      # create what's missing, mint keys, write the store and mirrors
 node $S sync --confirm       # re-copy the store to its mirrors, correct config values
 node $S teardown --confirm   # remove only what stack-setup created
+node $S rotate <name> --confirm   # replace a key or secret, then revoke the old one
 node $S gates set <id> done --by <name>
+node $S gates pickup <id> --file <path> --confirm   # store what a person handed back
 ```
 
-Options: `--report file.md` saves the Markdown report, `--json` prints JSON, `--wait <minutes>` sets how long `apply` waits for DNS (default 10), and `--no-save` leaves state alone (read commands only).
+Options: `--accept-cost` allows steps that cost money (only after the owner agreed to the price the plan shows), `--revoke <id>` names an old key made by hand for `rotate` to revoke, `--report file.md` saves the Markdown report, `--json` prints JSON, `--wait <minutes>` sets how long `apply` waits for DNS (default 10), and `--no-save` leaves state alone (read commands only).
 
 Exit codes: `0` done or all green, `1` something is red or failed, `2` something couldn't be checked (a login or tool is missing), `3` waiting (DNS), `10` changes planned but not confirmed, `64` usage.
 
@@ -45,9 +47,22 @@ Exit codes: `0` done or all green, `1` something is red or failed, `2` something
 | `resend` | the sending domain, its DNS records (through the DNS capability), then verification | a send-only key for that domain only | `EMAIL_FROM` |
 | `vercel` | config env values (`value:` or `from: <capability>.url`) | | corrects values that differ |
 | `github` | | | the whole store into each `github-secret` mirror |
-| secret store | | | `server-env` (a file on the host, a dated backup each time) or `local-env` (a 0600 file on this machine, refused inside Git unless ignored) |
+| `stripe` | webhook endpoints with the listed events (`webhooks.<name>: { path, events, connect, secret_env }`) | each endpoint's signing secret | corrects events; never re-creates an endpoint whose secret it doesn't hold |
+| `aws-ec2-docker` | with `agent: { profile }`: an IAM user, a managed policy and a key for the agent. With `bootstrap: <script>` and no server: key pair, SSH-only firewall, instance, Elastic IP, then the script over SSH | the agent's access key, into `~/.aws/credentials` (0600) | |
+| secret store | | | `server-env` (a file on the host, a dated backup each time; `reload:` makes the app reread it) or `local-env` (a 0600 file on this machine, refused inside Git unless ignored) |
 
-Writing to a `1password` store, Stripe, Google, the AWS host bootstrap and `rotate` come in M3.
+`rotate` works for every minted value: `RESEND_API_KEY`, each Stripe `secret_env`, and `agent-key`. It always makes the new one, writes the store and mirrors, and reloads the app. Only then does it revoke the old one. Without `reload:` on a server-env store it keeps the old one and tells you to revoke it after the next deploy.
+
+Values only a person can get go through `gates pickup`: Google's client JSON (`google.client`), or a KEY=value file from `secure-key-handoff` (for example `stripe.restricted-key`). The file is moved to the Trash afterwards.
+
+### The AWS agent key
+
+AWS console sign-ins (`aws login`) last 12 hours. With `agent: { profile: <name> }`, one `apply` (while the owner is signed in) makes an IAM user `stack-setup-<app>` and a key for it. After that every check and routine change uses that key. The key never expires; `rotate agent-key` replaces it without the owner. Its policy allows:
+- reading the account;
+- creating and managing only resources tagged `stack-setup:app=<app>`, in the stack's region;
+- rotating its own key.
+
+It can't create users, change policies, touch untagged resources (such as a server made by hand), use other regions, or read S3. AWS's policy simulator confirms each of these.
 
 ## How to work with it
 
@@ -67,6 +82,18 @@ Writing to a `1password` store, Stripe, Google, the AWS host bootstrap and `rota
 - **Choosable secret store:** `secrets.canonical.type` is `server-env` (a file on the API host), `local-env` (a file on this machine) or `1password` (a vault item). Checks read names only. A minted key goes straight from the provider into the store and its mirrors, held in memory and passed on stdin.
 - **Never overwrite:** a DNS record that already points somewhere else is a conflict for a person to resolve. A key whose value is already in the store is left alone; replacing it is `rotate`.
 - **Nothing is minted unless its store can be written.** If the store can't be read, the key step is skipped.
+- **Money:** a step that costs money shows its price in the plan (💲), and `apply` refuses the whole run without `--accept-cost`. Nothing is half-built.
+
+## Use it in another project
+
+The tool lives in this repo; each app keeps only its own `stack.yaml`.
+
+1. Install the skill once per machine: `ln -s <this repo>/skills/stack-setup ~/.claude/skills/stack-setup`. Every Claude session in every project then has it.
+2. In the app's repo, write `infra/stack/stack.yaml`. Start from [`docs/stack-setup/example.stack.yaml`](../../docs/stack-setup/example.stack.yaml) and pick a provider for each capability. A provider without an adapter is reported as skipped, not failed.
+3. Run `connect`, then `import` (if things already exist), `verify` and `plan`. Commit `infra/stack/.stack/state.json`.
+4. `apply --confirm` only after the owner has seen the plan.
+
+Real IDs stay in the app's repo; this repo holds only the tool and synthetic examples.
 
 ## stack.yaml
 
@@ -87,4 +114,8 @@ A provider with no adapter yet is reported as skipped, not failed. To add one, w
 
 ## Not yet
 
-M3 brings `rotate`, Stripe and Google set-up, the AWS host bootstrap and writing to 1Password. See [`docs/stack-setup/DESIGN.md`](../../docs/stack-setup/DESIGN.md).
+- Writing to a password manager: 1Password, or a free option such as Bitwarden Secrets Manager, Infisical or OpenBao. That waits on the owner's choice.
+- `stack init`, to scaffold a stack.yaml for a new app.
+- A dry plan for a second, different app (M4).
+
+See [`docs/stack-setup/DESIGN.md`](../../docs/stack-setup/DESIGN.md).

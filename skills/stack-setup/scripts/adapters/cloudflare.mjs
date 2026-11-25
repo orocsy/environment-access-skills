@@ -93,10 +93,19 @@ export async function ensureRecords(ctx, cap, records, owner) {
 	return created;
 }
 
+// The connector token a new host needs. Returned to the caller only, never printed.
+export async function tunnelToken(ctx, cap, name) {
+	const z = await zone(ctx, cap);
+	const t = await tunnel(ctx, cap, z.account.id, name);
+	if (!t) throw new Blocked(`no tunnel named ${name}`);
+	return api(ctx, cap, `/accounts/${z.account.id}/cfd_tunnel/${t.id}/token`);
+}
+
 export default {
 	provider: "cloudflare",
 	missingRecords,
 	ensureRecords,
+	tunnelToken,
 	tools: [],
 	validate(cap) {
 		const errors = [];
