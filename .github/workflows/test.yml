@@ -1,9 +1,37 @@
 name: Verify secure handoff
-on: [push, pull_request, workflow_dispatch]
+# Runs only when it can find something: pushes to main, PRs that are ready for review, and
+# changes outside prose-only docs (tests read docs/stack-setup/example.stack.yaml, so only Markdown
+# under docs/ is skipped). Feature-branch pushes are covered by their PR, so they don't run twice.
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'docs/**/*.md'
+      - 'research_notes/**'
+      - 'reports/**'
+      - 'README.md'
+      - 'AGENTS.md'
+      - 'LICENSE'
+      - 'CI-RELEASE.md'
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths-ignore:
+      - 'docs/**/*.md'
+      - 'research_notes/**'
+      - 'reports/**'
+      - 'README.md'
+      - 'AGENTS.md'
+      - 'LICENSE'
+      - 'CI-RELEASE.md'
+  workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 jobs:
   test:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest]
