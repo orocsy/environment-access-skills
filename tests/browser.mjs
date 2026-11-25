@@ -8,7 +8,10 @@ import { chromium } from "@playwright/test";
 import { ownerPage } from "../skills/secure-key-handoff/scripts/handoff.mjs";
 const script = resolve("skills/secure-key-handoff/scripts/handoff.mjs");
 const root = await mkdtemp(join(tmpdir(), "handoff-browser-"));
-const browser = await chromium.launch();
+// BROWSER_CHANNEL=chrome uses an installed Chrome instead of a downloaded Chromium.
+const browser = await chromium.launch(
+	process.env.BROWSER_CHANNEL ? { channel: process.env.BROWSER_CHANNEL } : {},
+);
 let checks = 0;
 try {
 	for (const platform of ["resend", "stripe", "github"]) {
@@ -45,7 +48,10 @@ try {
 		const download = page.waitForEvent("download");
 		await page.getByRole("button", { name: "加密并下载" }).click();
 		const file = await download;
-		assert.equal(file.suggestedFilename(), platform + "-test-encrypted.json");
+		assert.equal(
+			file.suggestedFilename(),
+			platform + "-test-" + info.requestId.slice(0, 8) + "-encrypted.json",
+		);
 		const received = join(root, platform + ".json");
 		await file.saveAs(received);
 		assert.equal((await readFile(received, "utf8")).includes("DEMO_"), false);
@@ -81,6 +87,87 @@ try {
 		await page.getByLabel("粘贴密钥").fill("DEMO");
 		await page.getByRole("button", { name: "加密并下载" }).click();
 		await page.getByText("未生成文件：", { exact: false }).waitFor();
+		checks++;
+		await page.close();
+	}
+	{
+		const dir = join(root, "fields"),
+			priv = join(root, "fields-private");
+		const p = spawnSync(
+			process.execPath,
+			[
+				script,
+				"prepare",
+				"--platform",
+				"stripe",
+				"--environment",
+				"test",
+				"--label",
+				"Stripe sandbox",
+				"--lang",
+				"en",
+				"--fields",
+				"STRIPE_SECRET_KEY:rk_test_|sk_test_,STRIPE_WEBHOOK_SECRET:whsec_",
+				"--private-dir",
+				priv,
+				"--out",
+				dir,
+			],
+			{ encoding: "utf8" },
+		);
+		assert.equal(p.status, 0, p.stderr);
+		const info = JSON.parse(p.stdout);
+		const page = await browser.newPage();
+		const network = [];
+		page.on("request", (r) => {
+			if (r.url().startsWith("http")) network.push(r.url());
+		});
+		let downloads = 0;
+		page.on("download", () => downloads++);
+		await page.goto(pathToFileURL(join(dir, "owner.html")).href);
+		await page.getByText(info.shortCode).waitFor();
+		const secret = page.getByLabel("STRIPE_SECRET_KEY");
+		const masked = () =>
+			secret.evaluate((e) => getComputedStyle(e).webkitTextSecurity);
+		assert.equal(await masked(), "disc");
+		await page.getByLabel("Show what I pasted").check();
+		assert.equal(await masked(), "none");
+		await secret.fill("sk_live_DEMO_NOT_REAL");
+		await page.getByLabel("STRIPE_WEBHOOK_SECRET").fill("whsec_DEMO");
+		await page.getByRole("button", { name: "Encrypt and download" }).click();
+		await page.getByText("looks like a live key", { exact: false }).waitFor();
+		assert.equal(downloads, 0, "no file for a live key on a test request");
+		await secret.fill("rk_test_DEMO_ONLY");
+		const download = page.waitForEvent("download");
+		await page.getByRole("button", { name: "Encrypt and download" }).click();
+		const file = await download;
+		const received = join(root, "fields.json");
+		await file.saveAs(received);
+		assert.equal(await secret.inputValue(), "");
+		assert.equal(await masked(), "disc", "masking comes back after download");
+		assert.deepEqual(network, []);
+		const output = join(priv, "fields.secret");
+		const r = spawnSync(
+			process.execPath,
+			[
+				script,
+				"receive",
+				"--request",
+				info.request,
+				"--key",
+				info.privateKey,
+				"--input",
+				root,
+				"--out",
+				output,
+			],
+			{ encoding: "utf8" },
+		);
+		assert.equal(r.status, 0, r.stderr);
+		assert.deepEqual(JSON.parse(await readFile(output, "utf8")), {
+			STRIPE_SECRET_KEY: "rk_test_DEMO_ONLY",
+			STRIPE_WEBHOOK_SECRET: "whsec_DEMO",
+		});
 		checks++;
 		await page.close();
 	}
